@@ -14,61 +14,32 @@ Nadie necesita clonar este repositorio.
 
 ## Instalacion para el equipo
 
-Soporta **macOS** y **Linux**, con **Claude Code** u **OpenCode** (al menos uno).
+Cinco pasos. **Los cuatro primeros son iguales en macOS y Linux**; solo cambian el gestor
+de paquetes del sistema y un permiso de Homebrew que aplica solo a macOS.
 
-### Requisitos previos
+### Lo que tiene que estar antes de correr `init`
 
-| | Version | Por que |
+| | Requisito | Bloquea si falta |
 |---|---|---|
-| Node.js | **20.11+** | lo verifica el preflight y bloquea si falta |
-| Un agente | Claude Code **o** OpenCode | sin agente no hay donde correr los comandos |
-| git | cualquiera | aviso, no bloquea: sin repo no se puede revertir |
-| `uv` (Python) | opcional | BMAD lo usa para su config; funciona sin el, mas lento |
+| 1 | Node.js **20.11+** | **si** |
+| 2 | **Claude Code** u **OpenCode** (al menos uno) | **si** |
+| 3 | Homebrew — **solo macOS** | si, para Gentle-AI |
+| 4 | git | no, pero sin el no podes revertir |
+| 5 | `uv` (Python) | no, solo hace mas lento a BMAD |
 
 ---
 
-### macOS
+### Paso 1 — Node.js 20.11 o superior
 
-**1. Node 20+ y Homebrew**
-
-```bash
-# Homebrew, si no lo tenes
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-brew install node        # Node 20+
-brew install uv          # opcional
-```
-
-**2. Un agente**
+<table>
+<tr><th>macOS</th><th>Linux</th></tr>
+<tr><td>
 
 ```bash
-brew install --cask claude-code      # o: npm install -g @anthropic-ai/claude-code
-brew install sst/tap/opencode        # OpenCode
+brew install node
 ```
 
-**3. El entorno, en la carpeta de tu proyecto**
-
-```bash
-cd mi-proyecto
-npx un-specweaver init
-```
-
-**4. Autorizar el tap de Homebrew.** `init` se va a detener aqui: Gentle-AI instala Engram y GGA
-desde un tap de terceros y brew se niega a cargar formulas no confiables. **Es una decision de
-seguridad que la herramienta no toma por nadie.**
-
-```bash
-brew trust gentleman-programming/tap
-npx un-specweaver init
-```
-
-Si preferis minimo privilegio, `init` lista exactamente que items autorizar uno por uno.
-
----
-
-### Linux
-
-**1. Node 20+**
+</td><td>
 
 ```bash
 # Debian / Ubuntu
@@ -80,33 +51,79 @@ sudo dnf install nodejs npm
 
 # Arch
 sudo pacman -S nodejs npm
+```
 
-# uv (opcional, cualquier distro)
+</td></tr>
+</table>
+
+En macOS, si no tenes Homebrew:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Homebrew **no es opcional en macOS**: es como se instala Gentle-AI. En Linux no hace falta.
+
+### Paso 2 — Un agente (igual en los dos sistemas)
+
+```bash
+npm install -g @anthropic-ai/claude-code    # Claude Code
+npm install -g opencode-ai                  # OpenCode
+```
+
+Con uno alcanza. Si instalas los dos, `init` te deja elegir cuales configurar.
+
+### Paso 3 — Opcional: `uv`
+
+```bash
+# macOS
+brew install uv
+
+# Linux (cualquier distro)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**2. Un agente**
+BMAD lo usa para resolver su configuracion. Sin el funciona igual, solo mas lento.
+
+### Paso 4 — Comprobar antes de seguir
 
 ```bash
-npm install -g @anthropic-ai/claude-code
-curl -fsSL https://opencode.ai/install | bash      # OpenCode
+node --version      # v20.11.0 o superior
+claude --version    # o: opencode --version
+git --version
+brew --version      # solo macOS
 ```
 
-**3. El entorno**
+Si algo falta, volve al paso correspondiente. `init` tambien lo verifica y te dice que falta,
+pero es mas rapido saberlo ahora.
+
+### Paso 5 — Montar el entorno
 
 ```bash
 cd mi-proyecto
 npx un-specweaver init
 ```
 
-**4. Gentle-AI.** En Linux **no hay paso de `brew trust`**: sin Homebrew, `init` usa el instalador
-oficial de Gentle-AI, que detecta tu gestor de paquetes (apt / dnf / pacman). Va a pedirte
-confirmacion antes de ejecutar un script remoto — es `curl | bash`, y la herramienta nunca lo
-corre sin que digas que si. Con `--yes` se salta la confirmacion.
+Hace cuatro preguntas —idioma, alcance de la memoria, graphify y que agentes configurar— y
+despues instala BMAD, inicializa OpenSpec y configura Gentle-AI. Tarda unos minutos.
 
-> **Nota honesta:** el flujo completo se probo end-to-end en macOS. La ruta de Linux esta
-> implementada y el instalador de Gentle-AI la soporta oficialmente, pero no la corri yo.
-> Si algo falla ahi, `npx un-specweaver doctor` dice exactamente que paso y que bloquea.
+**En macOS se va a detener una vez** pidiendo autorizar un tap de Homebrew: Gentle-AI instala
+Engram y GGA desde un tap de terceros, y brew se niega a cargar formulas no confiables.
+**Es una decision de seguridad que la herramienta no toma por nadie.**
+
+```bash
+brew trust gentleman-programming/tap
+npx un-specweaver init
+```
+
+Si preferis minimo privilegio, `init` lista exactamente que items autorizar uno por uno.
+
+**En Linux ese paso no existe.** Sin Homebrew se usa el instalador oficial de Gentle-AI, que
+detecta tu gestor de paquetes. Va a pedir confirmacion antes de ejecutar el script remoto
+(`curl | bash`); con `--yes` se salta la confirmacion.
+
+> La ruta de Linux esta implementada y Gentle-AI la soporta oficialmente, pero el flujo completo
+> se probo end-to-end solo en macOS. Si algo falla, `doctor` dice que paso y que bloquea.
 
 ---
 
@@ -121,14 +138,12 @@ Se hacen **una sola vez** y quedan en `.un-specweaver/config.json`:
 | graphify | Usarlo si esta / Ignorarlo | usarlo si esta |
 | Agentes | los detectados en la maquina | los que uses de verdad |
 
-Con flags, sin preguntas (util para scripts):
+Sin preguntas, para scripts o CI:
 
 ```bash
 npx un-specweaver init --lang es --engram-scope project --graphify auto \
-  --agents claude-code,opencode
+  --agents claude-code,opencode --yes
 ```
-
----
 
 ### Verificar
 
@@ -141,7 +156,7 @@ Todo en `ok`. Si algo falta, dice **que bloquea**: los pasos de Gentle-AI solo i
 
 ### Empezar
 
-Abri tu agente en esa carpeta:
+Abri tu agente en esa carpeta y corre:
 
 ```
 /sw:new          # Claude Code
