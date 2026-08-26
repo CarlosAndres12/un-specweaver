@@ -9,42 +9,126 @@ y el puente deterministico entre ambos.
 npx un-specweaver init
 ```
 
-Funciona en macOS y Linux, con **Claude Code** (de pago) y **OpenCode** (gratis).
-Codex y Cursor reciben la skill pero no los comandos. Nadie necesita clonar este repositorio.
+Funciona en **macOS** y **Linux**, con **Claude Code** (de pago) y **OpenCode** (gratis).
+Nadie necesita clonar este repositorio.
 
 ## Instalacion para el equipo
 
-### Requisitos
+Soporta **macOS** y **Linux**, con **Claude Code** u **OpenCode** (al menos uno).
 
-| | |
-|---|---|
-| Node.js | 20.11 o superior |
-| Agente | **Claude Code** o **OpenCode** (al menos uno instalado) |
-| Sistema | macOS o Linux |
-| Homebrew | solo macOS, para instalar Gentle-AI |
-| Python `uv` | opcional; BMAD lo usa para resolver su config, funciona sin el |
+### Requisitos previos
 
-### Un solo comando, en la carpeta del proyecto
+| | Version | Por que |
+|---|---|---|
+| Node.js | **20.11+** | lo verifica el preflight y bloquea si falta |
+| Un agente | Claude Code **o** OpenCode | sin agente no hay donde correr los comandos |
+| git | cualquiera | aviso, no bloquea: sin repo no se puede revertir |
+| `uv` (Python) | opcional | BMAD lo usa para su config; funciona sin el, mas lento |
+
+---
+
+### macOS
+
+**1. Node 20+ y Homebrew**
 
 ```bash
+# Homebrew, si no lo tenes
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+brew install node        # Node 20+
+brew install uv          # opcional
+```
+
+**2. Un agente**
+
+```bash
+brew install --cask claude-code      # o: npm install -g @anthropic-ai/claude-code
+brew install sst/tap/opencode        # OpenCode
+```
+
+**3. El entorno, en la carpeta de tu proyecto**
+
+```bash
+cd mi-proyecto
 npx un-specweaver init
 ```
 
-Pregunta cuatro cosas —idioma, alcance de la memoria, graphify, y que agentes configurar— y
-deja el entorno listo. Tarda unos minutos: descarga BMAD, inicializa OpenSpec y configura Gentle-AI.
-
-### Un paso manual que cada persona debe autorizar
-
-Gentle-AI instala Engram y GGA desde un tap de Homebrew de terceros. Brew se niega a cargar
-formulas no confiables, y **autorizar un tap es una decision de seguridad que la herramienta no
-toma por nadie**. Cuando `init` se detenga pidiendolo:
+**4. Autorizar el tap de Homebrew.** `init` se va a detener aqui: Gentle-AI instala Engram y GGA
+desde un tap de terceros y brew se niega a cargar formulas no confiables. **Es una decision de
+seguridad que la herramienta no toma por nadie.**
 
 ```bash
 brew trust gentleman-programming/tap
 npx un-specweaver init
 ```
 
-Si preferis minimo privilegio, `init` te dice exactamente que items autorizar uno por uno.
+Si preferis minimo privilegio, `init` lista exactamente que items autorizar uno por uno.
+
+---
+
+### Linux
+
+**1. Node 20+**
+
+```bash
+# Debian / Ubuntu
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Fedora
+sudo dnf install nodejs npm
+
+# Arch
+sudo pacman -S nodejs npm
+
+# uv (opcional, cualquier distro)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**2. Un agente**
+
+```bash
+npm install -g @anthropic-ai/claude-code
+curl -fsSL https://opencode.ai/install | bash      # OpenCode
+```
+
+**3. El entorno**
+
+```bash
+cd mi-proyecto
+npx un-specweaver init
+```
+
+**4. Gentle-AI.** En Linux **no hay paso de `brew trust`**: sin Homebrew, `init` usa el instalador
+oficial de Gentle-AI, que detecta tu gestor de paquetes (apt / dnf / pacman). Va a pedirte
+confirmacion antes de ejecutar un script remoto — es `curl | bash`, y la herramienta nunca lo
+corre sin que digas que si. Con `--yes` se salta la confirmacion.
+
+> **Nota honesta:** el flujo completo se probo end-to-end en macOS. La ruta de Linux esta
+> implementada y el instalador de Gentle-AI la soporta oficialmente, pero no la corri yo.
+> Si algo falla ahi, `npx un-specweaver doctor` dice exactamente que paso y que bloquea.
+
+---
+
+### Las cuatro preguntas de `init`
+
+Se hacen **una sola vez** y quedan en `.un-specweaver/config.json`:
+
+| Pregunta | Opciones | Recomendado |
+|---|---|---|
+| Idioma | Espanol / English | el del equipo |
+| Memoria de Engram | Por proyecto / Global | **por proyecto** |
+| graphify | Usarlo si esta / Ignorarlo | usarlo si esta |
+| Agentes | los detectados en la maquina | los que uses de verdad |
+
+Con flags, sin preguntas (util para scripts):
+
+```bash
+npx un-specweaver init --lang es --engram-scope project --graphify auto \
+  --agents claude-code,opencode
+```
+
+---
 
 ### Verificar
 
@@ -52,18 +136,19 @@ Si preferis minimo privilegio, `init` te dice exactamente que items autorizar un
 npx un-specweaver doctor
 ```
 
-Debe quedar todo en `ok`. Si algo falta, dice **que bloquea**: los pasos de Gentle-AI solo
-impiden `/sw:build`; planear funciona sin ellos.
+Todo en `ok`. Si algo falta, dice **que bloquea**: los pasos de Gentle-AI solo impiden
+`/sw:build`; planear funciona sin ellos.
 
 ### Empezar
 
-En Claude Code u OpenCode, abierto en esa carpeta:
+Abri tu agente en esa carpeta:
 
 ```
-/sw:new
+/sw:new          # Claude Code
+/sw-new          # OpenCode
 ```
 
-En OpenCode los comandos son `/sw-new`, `/sw-build`, etc.
+---
 
 ## Idioma
 
@@ -139,8 +224,9 @@ En Claude Code son `/sw:new`; en OpenCode los mismos son `/sw-new`.
 | `/sw:sync` | actualiza vendors de forma controlada |
 | `/sw:doctor` | entorno + coherencia del flujo (FR sin change, specs huerfanos, frontera intacta) |
 
-Codex y Cursor reciben la skill `un-specweaver` con el mismo contenido, sin el atajo del comando:
-no exponen un formato de comandos documentado. Otros agentes no estan soportados.
+Los dos agentes reciben lo mismo: las nueve skills, los nueve comandos y la skill de
+orquestacion. Un agente no se declara soportado hasta haber corrido el flujo completo con el;
+por eso la lista es corta.
 
 ## Capacidades opcionales
 
@@ -327,7 +413,7 @@ Una sola duena por dato:
 ## Desarrollo
 
 ```bash
-npm test                    # 85 tests
+npm test                    # 118 tests
 npm pack                    # ~23 kB
 node bin/un-specweaver.mjs init --dry-run
 ```
@@ -347,4 +433,3 @@ implementando `status()` y `plan()`; `--dry-run`, la idempotencia y `doctor` sal
 | graphify como capacidad opcional | **funciona**, deteccion + tres ramas declaradas |
 | Gentle-AI (binario) | **funciona** — instala via Homebrew |
 | Engram | bloqueado por confianza del tap; detectado y reportado con remedio, sin ejecutar |
-| Codex / Cursor con comandos | fuera de alcance por ahora: reciben la skill |

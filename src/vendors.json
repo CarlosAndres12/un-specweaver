@@ -106,28 +106,6 @@
       },
       "commands": ".opencode/commands",
       "commandStyle": "prefixed"
-    },
-    "codex": {
-      "bin": "codex",
-      "home": ".codex",
-      "skills": ".agents/skills",
-      "ids": {
-        "bmad": "codex",
-        "openspec": "codex",
-        "gentle": "codex"
-      },
-      "commands": null
-    },
-    "cursor": {
-      "bin": "cursor",
-      "home": ".cursor",
-      "skills": ".agents/skills",
-      "ids": {
-        "bmad": "cursor",
-        "openspec": "cursor",
-        "gentle": "cursor"
-      },
-      "commands": null
     }
   },
   "_adapters": "Cada vendor nombra los mismos agentes distinto (BMAD: claude-code / OpenSpec: claude / Gentle: claude-code). Este mapa es el unico lugar donde eso se sabe. Si un vendor renombra un id, se corrige aqui y nada mas.",
@@ -148,5 +126,6 @@
     "_comment": "VERIFICADO EN UNA MAQUINA REAL: engram usa UNA sola base (~/.engram/engram.db) para todos los proyectos. El aislamiento por --project SI funciona, pero la deteccion por directorio NO: una memoria guardada sin --project queda huerfana y aparece en cualquier busqueda sin filtro. Gentle-AI configura el MCP global sin --project, asi que por defecto la memoria se mezcla entre proyectos.",
     "mcpServer": "engram",
     "bindProject": true
-  }
+  },
+  "_agentsScope": "Solo Claude Code y OpenCode. Son los dos que este flujo soporta de punta a punta: ambos tienen formato de comandos documentado, ambos reciben las skills, y ambos se probaron end-to-end. Agregar un agente es agregar una entrada aqui, pero no se declara soportado hasta haberlo corrido completo."
 }

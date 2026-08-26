@@ -272,10 +272,11 @@ test('la capa emite skill a todos y comandos solo a quien tiene formato document
   assert.ok(both.includes(path.join('.claude/skills/un-specweaver', 'SKILL.md')));
   assert.ok(both.includes(path.join('.agents/skills/un-specweaver', 'SKILL.md')));
 
-  // Codex y Cursor no exponen formato de comandos: reciben la skill, no comandos vacios.
-  const codex = files(['codex']);
-  assert.ok(codex.some((f) => f.endsWith(path.join('un-specweaver', 'SKILL.md'))));
-  assert.ok(!codex.some((f) => f.includes('commands')), 'no debe inventar comandos para agentes sin formato');
+  // Todo agente soportado recibe skill Y comandos: no se declara soportado uno a medias.
+  for (const [id, cfg] of Object.entries(VENDORS.agents)) {
+    assert.ok(cfg.commands, `${id}: un agente soportado debe tener formato de comandos`);
+    assert.ok(files([id]).some((f) => f.includes('commands')), `${id}: debe recibir los comandos`);
+  }
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -957,4 +958,17 @@ test('reinstalar respeta los agentes guardados en vez de volver a detectar', () 
 test('ignora el cache de skills de Gentle-AI en la raiz del proyecto', () => {
   // .atl/ aparecio reseteando un proyecto a mano: lo deja gentle-config y se iba a commitear.
   assert.ok(gitignoreBlock([]).includes('.atl/'), '.atl/ es cache regenerable, no va al repo');
+});
+
+test('solo se declaran soportados los agentes probados de punta a punta', () => {
+  // Codex se saco: su toolchain desactualizada hacia fallar gentle-config en cada corrida
+  // y nunca se probo el flujo completo con el. Soportar a medias es peor que no soportar.
+  assert.deepEqual(Object.keys(VENDORS.agents).sort(), ['claude-code', 'opencode']);
+  for (const [id, cfg] of Object.entries(VENDORS.agents)) {
+    assert.ok(cfg.skills, `${id}: falta dir de skills`);
+    assert.ok(cfg.commands, `${id}: falta dir de comandos`);
+    assert.ok(cfg.commandStyle, `${id}: falta commandStyle`);
+    for (const v of ['bmad', 'openspec', 'gentle'])
+      assert.ok(cfg.ids?.[v], `${id}: falta el id para ${v}`);
+  }
 });
