@@ -39,10 +39,10 @@
   "author": "Juan Sebastián Méndez Rondón <jumendezro@unal.edu.co>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deathperminut/UN_SPEC.git"
+    "url": "git+https://github.com/deathperminut/un-specweaver.git"
   },
   "bugs": {
-    "url": "https://github.com/deathperminut/UN_SPEC/issues"
+    "url": "https://github.com/deathperminut/un-specweaver/issues"
   },
-  "homepage": "https://github.com/deathperminut/UN_SPEC#readme"
+  "homepage": "https://github.com/deathperminut/un-specweaver#readme"
 }
