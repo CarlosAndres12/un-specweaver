@@ -1,0 +1,73 @@
+---
+name: change
+title: "UB: Requerimiento nuevo"
+description: "Procesa un requerimiento que llega a mitad del desarrollo: primero controla el alcance, luego actualiza el documento fuente y regenera solo lo afectado."
+allowed-tools: Bash(npx:*), Bash(git:*), Read, Write, Edit, Glob, Grep
+---
+
+# /sw:change — requerimiento nuevo a mitad del desarrollo
+
+Este es el caso que mas se rompe si se hace a ojo. **El orden no es negociable.**
+
+El requerimiento viene en `$ARGUMENTS`. Si viene vacio, pidelo antes de hacer nada.
+
+## Paso 1 — Control de alcance (antes de tocar un solo archivo)
+
+Lee `.un-specweaver/trace.json` y `_bmad-output/prd.md`. Clasifica el requerimiento en **una** de tres:
+
+| Clasificacion | Como se reconoce | Que sigue |
+|---|---|---|
+| **Dentro del alcance** | refina un FR que ya existe; no agrega comportamiento nuevo | Paso 2 |
+| **Scope creep** | comportamiento nuevo que el PRD no contempla, pero cabe en un epic existente | **Detente y dilo.** Espera decision. |
+| **Epic nuevo** | capability nueva completa | **Detente.** Esto vuelve a planeacion, no es un parche. |
+
+Di la clasificacion en voz alta, con el FR o la story concreta que la sustenta. Si dudas entre
+dos, elige la mas restrictiva y explica por que.
+
+**No sigas al Paso 2 sin que el usuario confirme una clasificacion que no sea "dentro del alcance".**
+
+## Paso 2 — Actualizar el documento fuente, no el derivado
+
+Si cambia el comportamiento, cambia el PRD/epics con `bmad-correct-course`.
+
+Editar el spec sin actualizar el PRD deja los dos mintiendo: el spec dice una cosa, el PRD otra,
+y en tres semanas nadie sabe cual manda. El spec es **derivado** del epics.md — se regenera, no
+se edita a mano.
+
+## Paso 3 — Regenerar solo lo afectado
+
+```
+npx un-specweaver bridge --only <N.M> --force
+```
+
+Un `--only` por cada story tocada. **No regeneres todo**: sobreescribirias changes en vuelo que
+otros desarrolladores ya estan trabajando.
+
+Antes de correrlo, revisa `.un-specweaver/sprint-plan.md`: si la story afectada tiene dependientes en
+olas posteriores, avisa cuales se ven impactados.
+
+## Paso 4 — Reverificar
+
+```
+npx @fission-ai/openspec validate --all --strict
+```
+
+## Paso 5 — Registrar el por que
+
+Engram es **opcional**. `npx un-specweaver doctor` dice si esta disponible, y
+`.un-specweaver/config.json` dice con que alcance: `preferences.engramScope` en `"project"`
+significa que este proyecto no ve la memoria de los demas; en `"global"`, la comparte.
+Si guardas algo sensible de un cliente y el alcance es global, **dilo antes de guardarlo**.
+
+- **Si `engram` esta en PATH** → guarda ahi la decision y su razon.
+- **Si no esta** → escribela igual, en `design.md` del change bajo `## Decisions`, y **avisa
+  al usuario** que se guardo ahi porque Engram no esta instalado.
+
+Lo que no se vale es invocar Engram, que no pase nada, y perder el rationale en silencio.
+Un "por que" que no quedo escrito en ningun lado se pierde igual que si nunca se hubiera pensado.
+
+Guarda la **decision y su razon**, no el que (eso ya esta en el spec). Lo que se pierde
+siempre es por que se acepto o se rechazo un cambio de alcance.
+
+Si el cambio se rechazo por scope creep, registralo igual: la proxima vez que alguien lo proponga,
+esa decision ahorra la discusion completa.

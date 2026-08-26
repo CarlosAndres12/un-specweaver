@@ -1,0 +1,152 @@
+{
+  "_comment": "Punto unico de control de drift. Cambiar una version aqui y correr `un-specweaver doctor` es todo el mantenimiento de vendors que existe.",
+  "bmad": {
+    "npm": "bmad-method",
+    "version": "6.11.0",
+    "modules": "bmm",
+    "prune": [
+      "bmad-agent-dev",
+      "bmad-build",
+      "bmad-build-auto",
+      "bmad-spec",
+      "bmad-dev-story",
+      "bmad-dev-auto",
+      "bmad-quick-dev",
+      "bmad-create-story"
+    ],
+    "pruneReason": "BMAD termina en la story. bmad-agent-dev/build/build-auto escriben codigo, que aqui lo hace el SDD; bmad-spec produce su propio contrato de maquina, que aqui lo hace OpenSpec; los cuatro restantes son shims deprecados que reenvian a bmad-build y quedarian apuntando al vacio.",
+    "noShims": false,
+    "pruneOptional": [
+      "bmad-qa-generate-e2e-tests"
+    ],
+    "pruneOptionalReason": "Genera tests e2e. No pelea por el mismo archivo que el SDD (que hace TDD unitario), asi que se conserva por defecto. Podalo con --prune-extra si quieres que el SDD sea el unico dueno de los tests.",
+    "shimsNote": "VERIFICADO CONTRA EL CLI 6.11.0: --shims/--no-shims aparece en los docs de BMAD pero el binario lo rechaza con 'unknown option'. Por eso los shims deprecados se podan por ruta en vez de evitarse por flag. Si una version futura lo acepta, pon noShims en true y quitalos de la lista.",
+    "pruneLeakNote": "VERIFICADO: BMAD instala cada skill DOS veces por agente — el directorio en <skills>/ y ademas un comando en .opencode/commands/<skill>.md. Podar solo el directorio deja los agentes constructores invocables desde OpenCode. Hay que podar ambos."
+  },
+  "openspec": {
+    "npm": "@fission-ai/openspec",
+    "version": "1.10.0"
+  },
+  "gentle": {
+    "bin": "gentle-ai",
+    "version": "v2.4.0",
+    "installer": "https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh",
+    "brewTap": "gentleman-programming/tap",
+    "brewFormula": "gentle-ai",
+    "brewFormulae": [
+      "gentle-ai",
+      "engram",
+      "gga"
+    ],
+    "trustNote": "VERIFICADO EN UNA MAQUINA REAL: el pipeline de gentle-ai instala varios items del tap (gentle-ai, engram, gga) y Homebrew exige confianza POR ITEM y POR TIPO — engram esta publicado como formula Y cask, y confiar solo la formula no basta. Ademas `brew tap-info` reporta el tap como 'Untrusted' aunque haya items suyos confiados, asi que se lee trust.json. Si una version futura de gentle-ai suma otro item, el error lo nombra y se agrega aqui.",
+    "skills": [
+      "_shared",
+      "branch-pr",
+      "chained-pr",
+      "cognitive-doc-design",
+      "comment-writer",
+      "go-testing",
+      "issue-creation",
+      "issue-root-resolution",
+      "judgment-day",
+      "skill-creator",
+      "skill-improver",
+      "skill-registry",
+      "systemic-issue-triage",
+      "work-unit-commits"
+    ],
+    "skillPrefixes": [
+      "sdd-",
+      "rdd-",
+      "gentle-ai-"
+    ],
+    "doneMarker": "sdd-apply",
+    "skillsNote": "VERIFICADO: gentle-ai 2.4 instala ~25 skills y 10 comandos en el proyecto y ya NO crea .atl/. El marcador de que el paso corrio es la skill sdd-apply. Todo esto es regenerable con `gentle-ai install`, asi que va al .gitignore; si una version futura suma skills nuevas, `doctor` avisa que hay vendor sin ignorar en vez de dejar que se commiteen.",
+    "agentPrefixes": [
+      "sdd-",
+      "jd-",
+      "review-"
+    ],
+    "generatedDirs": [
+      "mcp",
+      "output-styles"
+    ],
+    "keepTracked": [
+      "CLAUDE.md",
+      "settings.json",
+      ".mcp.json"
+    ],
+    "keepTrackedNote": "Gentle-AI genera CLAUDE.md y settings.json, pero son los archivos que un humano edita. Ignorarlos perderia en silencio las reglas propias del usuario; committearlos solo mete ruido. Entre esos dos males, el ruido.",
+    "generatedProjectDirs": [
+      ".atl"
+    ],
+    "generatedProjectDirsNote": "Gentle-AI deja .atl/ en la raiz del proyecto: es el cache del registro de skills, regenerable con `gentle-ai skill-registry refresh`. Aparecio reseteando un proyecto a mano."
+  },
+  "agents": {
+    "claude-code": {
+      "bin": "claude",
+      "home": ".claude",
+      "skills": ".claude/skills",
+      "ids": {
+        "bmad": "claude-code",
+        "openspec": "claude",
+        "gentle": "claude-code"
+      },
+      "commands": ".claude/commands",
+      "commandStyle": "namespaced"
+    },
+    "opencode": {
+      "bin": "opencode",
+      "home": ".config/opencode",
+      "skills": ".agents/skills",
+      "ids": {
+        "bmad": "opencode",
+        "openspec": "opencode",
+        "gentle": "opencode"
+      },
+      "commands": ".opencode/commands",
+      "commandStyle": "prefixed"
+    },
+    "codex": {
+      "bin": "codex",
+      "home": ".codex",
+      "skills": ".agents/skills",
+      "ids": {
+        "bmad": "codex",
+        "openspec": "codex",
+        "gentle": "codex"
+      },
+      "commands": null
+    },
+    "cursor": {
+      "bin": "cursor",
+      "home": ".cursor",
+      "skills": ".agents/skills",
+      "ids": {
+        "bmad": "cursor",
+        "openspec": "cursor",
+        "gentle": "cursor"
+      },
+      "commands": null
+    }
+  },
+  "_adapters": "Cada vendor nombra los mismos agentes distinto (BMAD: claude-code / OpenSpec: claude / Gentle: claude-code). Este mapa es el unico lugar donde eso se sabe. Si un vendor renombra un id, se corrige aqui y nada mas.",
+  "_commands": "Solo Claude Code y OpenCode exponen un formato de comandos documentado. Claude: .claude/commands/<ns>/<n>.md -> /ns:n. OpenCode: .opencode/commands/<ns>-<n>.md -> /ns-n. Los demas agentes reciben la skill, que igual funciona: es el mismo contenido sin atajo.",
+  "surface": {
+    "_comment": "Un solo vocabulario visible. Las skills de vendor se conservan enteras — son el valor y siguen siendo invocables. Lo que se poda son los COMANDOS que compiten con /sw:*: las fases del SDD (BMAD ya cubrio ese trabajo antes y mejor), los de OpenSpec (el flujo los llama por CLI) y los atajos bmad-* (los orquesta /sw:new). Podar el atajo no quita la skill.",
+    "pruneCommandPrefixes": [
+      "sdd-",
+      "opsx-",
+      "bmad-"
+    ],
+    "pruneCommandDirs": [
+      "opsx"
+    ],
+    "keep": "Todas las skills de Gentle-AI (judgment-day, work-unit-commits, branch-pr, los revisores) siguen disponibles."
+  },
+  "engram": {
+    "_comment": "VERIFICADO EN UNA MAQUINA REAL: engram usa UNA sola base (~/.engram/engram.db) para todos los proyectos. El aislamiento por --project SI funciona, pero la deteccion por directorio NO: una memoria guardada sin --project queda huerfana y aparece en cualquier busqueda sin filtro. Gentle-AI configura el MCP global sin --project, asi que por defecto la memoria se mezcla entre proyectos.",
+    "mcpServer": "engram",
+    "bindProject": true
+  }
+}

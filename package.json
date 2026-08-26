@@ -1,0 +1,48 @@
+{
+  "name": "un-specweaver",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Teje agentes, fases y stories en una sola especificacion: BMAD para planeacion, OpenSpec/Gentle-AI para ejecucion, con un puente deterministico entre ambos.",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.mjs\"",
+    "bridge": "node bridge/cli.mjs",
+    "un-specweaver": "node bin/un-specweaver.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "spec-driven",
+    "sdd",
+    "agents",
+    "ai-agents",
+    "bmad",
+    "openspec",
+    "gentle-ai",
+    "claude-code",
+    "opencode",
+    "workflow"
+  ],
+  "license": "MIT",
+  "bin": {
+    "un-specweaver": "bin/un-specweaver.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "bridge/",
+    "fixtures/",
+    "README.md",
+    "LICENSE"
+  ],
+  "author": "Juan Sebastián Méndez Rondón <jumendezro@unal.edu.co>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deathperminut/UN_SPEC.git"
+  },
+  "bugs": {
+    "url": "https://github.com/deathperminut/UN_SPEC/issues"
+  },
+  "homepage": "https://github.com/deathperminut/UN_SPEC#readme"
+}
