@@ -1,8 +1,8 @@
 {
   "name": "un-specweaver",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
-  "description": "Teje agentes, fases y stories en una sola especificacion: BMAD para planeacion, OpenSpec/Gentle-AI para ejecucion, con un puente deterministico entre ambos.",
+  "description": "Desarrollo dirigido por especificacion: de la idea al codigo en fases verificables, con trazabilidad de requisito a contrato a codigo.",
   "engines": {
     "node": ">=20.11"
   },

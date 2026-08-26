@@ -1,16 +1,113 @@
 # un-specweaver
 
-Un comando monta un entorno de desarrollo dirigido por especificacion que junta la mitad de
-**planeacion** de [BMAD METHOD](https://github.com/bmad-code-org/BMAD-METHOD) con la mitad de
-**ejecucion** de [Gentle-AI](https://github.com/Gentleman-Programming/gentle-ai) / OpenSpec,
-y el puente deterministico entre ambos.
+**Desarrollo dirigido por especificacion, de la idea al codigo, con trazabilidad completa.**
+
+Una metodologia y la herramienta que la implementa. En vez de describirle una funcionalidad a un
+agente y esperar que acierte, el trabajo baja por fases: cada una produce un artefacto verificable
+que alimenta a la siguiente, y cada linea de codigo se puede rastrear hasta el requisito que la
+justifica.
 
 ```bash
 npx un-specweaver init
 ```
 
-Funciona en **macOS** y **Linux**, con **Claude Code** (de pago) y **OpenCode** (gratis).
-Nadie necesita clonar este repositorio.
+macOS y Linux. Claude Code u OpenCode. Espanol o ingles. Nadie necesita clonar este repositorio.
+
+---
+
+## La metodologia
+
+Seis fases. Cada una tiene una salida concreta, y ninguna empieza sin la anterior.
+
+| | Fase | Produce | Por que existe |
+|---|---|---|---|
+| 1 | **Entender** | brief y PRD con requisitos numerados | sin requisitos numerados no hay que rastrear |
+| 2 | **Decidir** | arquitectura y diseno UX | las decisiones tecnicas se toman una vez, no en cada historia |
+| 3 | **Descomponer** | epicas e historias con criterios Given/When/Then | una historia es la unidad que una persona puede terminar |
+| 4 | **Traducir** | un contrato ejecutable por historia | **deterministico**: misma entrada, misma salida, siempre |
+| 5 | **Construir** | codigo que cumple el contrato | los escenarios del contrato son los casos de prueba |
+| 6 | **Cerrar** | el contrato pasa a ser la verdad del sistema | de ahi se mide el alcance de todo lo que llegue despues |
+
+### Las tres reglas que la sostienen
+
+**El contrato es derivado, no fuente.** Los contratos se regeneran desde las historias; no se
+editan a mano. Si un contrato esta mal, la historia esta mal. Editar el derivado desincroniza los
+dos y nadie se entera hasta que es tarde.
+
+**El alcance se controla antes de tocar archivos.** Un requerimiento nuevo se clasifica primero
+—dentro del alcance, scope creep, o epica nueva— y recien despues se toca algo. Un defecto no
+pasa por ese control: lo acordado no cambio, solo no se cumplio. Son dos flujos distintos a
+proposito.
+
+**Cada dato tiene un solo dueno.** La intencion de producto vive en el PRD; el contrato de
+comportamiento en los specs; el rationale en la memoria; la estructura del codigo en el grafo.
+Duplicar entre capas es como empiezan a contradecirse.
+
+---
+
+## El flujo, en comandos
+
+Nueve comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en OpenCode, `/sw-new`.
+
+```
+                  ┌─ /sw:new ─────────────────────────────────┐
+   idea  ────────▶│  entender → decidir → descomponer         │
+                  │  → traducir → verificar                   │
+                  └───────────────────┬───────────────────────┘
+                                      │  contratos verificados
+                                      ▼
+   /sw:sprint ──▶ que se puede hacer en paralelo y que no
+                                      │
+                                      ▼
+   /sw:build <id> ──▶ construir una historia contra su contrato
+                                      │
+                                      ▼
+                              /sw:build la archiva
+```
+
+| Comando | Cuando |
+|---|---|
+| `/sw:new` | proyecto desde cero |
+| `/sw:adopt` | proyecto que ya existe: mapear, derivar arquitectura, fijar la linea base |
+| `/sw:build <id>` | construir una historia |
+| `/sw:change "<req>"` | requerimiento nuevo — **cambia lo acordado**, pasa por control de alcance |
+| `/sw:bug "<defecto>"` | defecto — lo acordado esta bien, el codigo no. Sin control de alcance |
+| `/sw:ticket <n>` | issue de GitHub: clasifica y enruta a uno de los dos anteriores |
+| `/sw:sprint` | recalcula que se puede paralelizar segun dependencias reales |
+| `/sw:sync` | actualizar las herramientas de forma controlada |
+| `/sw:doctor` | salud del entorno y coherencia del flujo |
+
+---
+
+## Que hace la herramienta
+
+`un-specweaver` no reimplementa la metodologia: **orquesta herramientas que ya la resuelven bien**,
+las pinea a una version conocida, y aporta la pieza que a ninguna le sobraba.
+
+| Fase | Motor |
+|---|---|
+| Entender, decidir, descomponer | [BMAD METHOD](https://github.com/bmad-code-org/BMAD-METHOD) |
+| **Traducir** | **el puente de este repositorio** |
+| Contratos y verificacion | [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
+| Construccion, revision, memoria | [Gentle-AI](https://github.com/Gentleman-Programming/gentle-ai) + Engram |
+
+**La fase 4 es la que no existia.** BMAD llega hasta la historia; OpenSpec arranca en el contrato;
+entre las dos habia un salto que se hacia a mano o se improvisaba. El puente lo cierra de forma
+deterministica: mismo `epics.md`, mismos contratos, byte por byte, con la trazabilidad
+requisito ↔ historia ↔ contrato escrita en un archivo.
+
+Ademas la herramienta hace tres cosas que suenan menores y no lo son:
+
+- **Poda lo que se pisa.** Dos herramientas del stack traen agentes constructores; si conviven,
+  compiten por el mismo archivo. Se remueven en la instalacion, no con una regla que un agente
+  pueda ignorar.
+- **Deja un solo vocabulario.** Los comandos de los vendors se ocultan; queda `/sw:*`. Las skills
+  utiles siguen todas disponibles.
+- **Aisla la memoria por proyecto.** Por defecto se comparte entre proyectos; aqui se ata a este.
+
+Nada se forkea. Los vendors se actualizan solos y el pin vive en un unico archivo.
+
+---
 
 ## Instalacion para el equipo
 
@@ -188,61 +285,6 @@ $ npx un-specweaver init
 Precedencia: `--lang` > lo guardado > pregunta si hay terminal > `es`.
 Sin terminal (CI) nunca pregunta.
 
-## Por que no es un fork
-
-BMAD y Gentle-AI se actualizan casi a diario. Un hibrido vendorizado queda congelado en el tiempo
-y hereda el mantenimiento de dos proyectos ajenos. Aqui los vendors se **invocan pineados** desde
-`src/vendors.json`, que es el unico punto de control de drift que existe: se sube una version ahi,
-se publica, y `un-specweaver doctor` reporta la diferencia en cada proyecto instalado.
-
-## El corte
-
-```
-  BMAD                          un-specweaver                    Gentle-AI / OpenSpec
-  ─────────────────────────     ────────────────────        ────────────────────────
-  analyst → pm → architect                                  sdd: explore → propose
-  prd → epics → stories    ───▶  bridge/  ───▶  changes ───▶ spec → design → implement
-  correct-course                 trace.json                  Engram (decisiones)
-  sprint-planning                sprint-plan.md              RDD (review acotado)
-  ✗ podado
-```
-
-BMAD termina en la story. `init` **poda** las skills que cruzan la frontera:
-
-| Podado | Por que |
-|---|---|
-| `bmad-agent-dev`, `bmad-build`, `bmad-build-auto` | escriben codigo; aqui lo hace el SDD |
-| `bmad-spec` | produce su propio contrato de maquina; aqui lo hace OpenSpec |
-| `bmad-dev-story`, `bmad-dev-auto`, `bmad-quick-dev`, `bmad-create-story` | shims deprecados que reenvian a `bmad-build`, que ya no existe |
-| `bmad-qa-generate-e2e-tests` | **no** se poda por defecto; `--prune-extra` lo hace si quieres que el SDD sea el unico dueno de los tests |
-
-La poda alcanza **skills y comandos**. BMAD instala cada skill dos veces: el directorio en
-`<skills>/` y ademas un comando en `.opencode/commands/<skill>.md`. Podar solo el directorio
-deja los agentes constructores invocables desde OpenCode.
-
-Dos agentes desarrolladores compitiendo por el mismo archivo es la falla de diseno mas probable
-de este montaje. La poda la evita en la instalacion, no con una regla que el agente pueda ignorar.
-
-## Comandos del agente
-
-`init` instala ocho comandos, en el idioma elegido, en el formato de cada agente.
-En Claude Code son `/sw:new`; en OpenCode los mismos son `/sw-new`.
-
-| Comando | Cuando |
-|---|---|
-| `/sw:new` | proyecto desde cero: idea → PRD → epics → stories → changes verificados |
-| `/sw:adopt` | proyecto existente: graphify → arquitectura real → PRD brownfield → linea base de specs |
-| `/sw:change "<req>"` | requerimiento a mitad del desarrollo: **control de alcance primero**, luego regenerar solo lo afectado |
-| `/sw:ticket <n>` | issue de GitHub: clasifica defecto vs requerimiento y enruta |
-| `/sw:sprint` | recalcula las olas y reparte trabajo por dependencias reales |
-| `/sw:build <id>` | la unica fase que escribe codigo de producto; verifica dependencias antes de empezar |
-| `/sw:sync` | actualiza vendors de forma controlada |
-| `/sw:doctor` | entorno + coherencia del flujo (FR sin change, specs huerfanos, frontera intacta) |
-
-Los dos agentes reciben lo mismo: las nueve skills, los nueve comandos y la skill de
-orquestacion. Un agente no se declara soportado hasta haber corrido el flujo completo con el;
-por eso la lista es corta.
-
 ## Capacidades opcionales
 
 Se **detectan, nunca se instalan**. Ausentes no son un error: `doctor` las reporta en su propia
@@ -413,7 +455,7 @@ Todas verificadas contra los CLIs reales, no contra la documentacion.
 
 ## Fuente de verdad por tipo de dato
 
-Tres memorias solapadas (BMAD + Engram + graphify) gastan tokens y se contradicen.
+El detalle de la tercera regla. Tres memorias solapadas (BMAD + Engram + graphify) gastan tokens y se contradicen.
 Una sola duena por dato:
 
 | Dato | Duena |
