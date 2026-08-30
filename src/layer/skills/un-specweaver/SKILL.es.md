@@ -21,6 +21,7 @@ El puente entre ambos es deterministico: no lo improvises, ejecutalo.
 | `/sw:build <change-id>` | construir un change |
 | `/sw:sync` | actualizar vendors de forma controlada |
 | `/sw:doctor` | diagnostico del entorno y del flujo |
+| `/sw:dashboard` | dashboard local (alias `ui`, `--open`) |
 
 En OpenCode los mismos comandos son `/sw-new`, `/sw-change`, etc.
 Si el usuario describe una de esas situaciones sin invocar el comando, sugierelo.

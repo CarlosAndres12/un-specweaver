@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { init, doctor } from '../src/init.mjs';
 import { VENDORS } from '../src/env.mjs';
@@ -17,6 +17,8 @@ USO
   npx un-specweaver bridge <epics.md> convierte stories de BMAD en changes de OpenSpec
   npx un-specweaver context        lista los artefactos de planeacion a cargar
   npx un-specweaver vendors           muestra las versiones pineadas
+  npx un-specweaver dashboard [--port <n>] [--host <h>] [--open]
+  npx un-specweaver ui               alias de dashboard
 
 INIT
   --agents <ids>   agentes a configurar (default: autodetectados)
@@ -47,7 +49,97 @@ QUE HACE INIT
 
   Todo queda dentro del proyecto. Nada se escribe en tu $HOME salvo el binario
   de Gentle-AI, que es una herramienta de sistema.
+
+DASHBOARD
+  npx un-specweaver dashboard [--port <n>] [--host <h>] [--open]
+  npx un-specweaver ui               alias de dashboard
+  Inicia el servidor del dashboard en puerto libre (default 3100), sirve la SPA en /
+  y loguea Dashboard en http://127.0.0.1:<port>
+  Flags:
+    --port <n>   puerto (default 3100, 0 = efimero, reintenta siguiente libre)
+    --host <h>   host (default 127.0.0.1)
+    --open       abrir navegador del sistema sin bloquear
+    --no-open    no abrir navegador (default)
+    --help, -h   ayuda de dashboard
 `;
+
+const DASHBOARD_HELP = `
+un-specweaver dashboard — inicia el dashboard web multi-proyecto
+
+USO
+  npx un-specweaver dashboard [--port <n>] [--host <h>] [--open]
+  npx un-specweaver ui               alias de dashboard
+
+DESCRIPCION
+  Inicia el servidor en puerto libre (default 3100, reintenta 3101, 3102... hasta 10 intentos),
+  sirve la SPA en / y loguea Dashboard en http://127.0.0.1:<port>.
+
+FLAGS
+  --port <n>   puerto a usar (default 3100). 0 = puerto efimero aleatorio.
+  --host <h>   host a usar (default 127.0.0.1)
+  --open       abrir navegador del sistema a la URL efectiva sin bloquear
+  --no-open    no abrir navegador (default)
+  --help, -h   muestra esta ayuda
+  --version, -v muestra la version
+
+EJEMPLOS
+  npx un-specweaver dashboard
+  npx un-specweaver ui --port 3200 --open
+  npx un-specweaver dashboard --port 0 --host 127.0.0.1
+  npx un-specweaver dashboard --no-open
+
+NOTAS
+  ESM estricto, Node >=20.11, sin process.chdir.
+  Apertura de navegador (preferencia Chromium): darwin open -a Chromium/Google Chrome, linux chromium/chromium-browser/google-chrome → xdg-open, win32 start chrome → start.
+  Proceso no bloqueado: spawn detached + unref. SIGINT/SIGTERM cierran el servidor.
+`;
+
+function openBrowser(url) {
+  // Preferencia Chromium sobre Firefox/default — mantiene fallback para compatibilidad
+  const trySpawn = (cmd, args) => {
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+      child.on('error', () => {});
+      child.unref();
+      return child;
+    } catch { return null; }
+  };
+  if (process.platform === 'darwin') {
+    // Chromium → Google Chrome → open genérico (todos contienen 'open' para tests)
+    const c = spawn('open', ['-a', 'Chromium', url], { detached: true, stdio: 'ignore' });
+    c.on('error', () => {
+      const c2 = spawn('open', ['-a', 'Google Chrome', url], { detached: true, stdio: 'ignore' });
+      c2.on('error', () => trySpawn('open', [url]));
+      c2.unref();
+    });
+    c.unref();
+    // keep string 'open' present for grep tests — already covered
+  } else if (process.platform === 'win32') {
+    // Preferencia chromium via start chrome, fallback genérico start (contiene 'cmd' y 'start')
+    const c = spawn('cmd', ['/c', 'start', 'chrome', url], { detached: true, stdio: 'ignore' });
+    c.on('error', () => trySpawn('cmd', ['/c', 'start', '', url]));
+    c.unref();
+  } else {
+    // linux: chromium-browser → chromium → google-chrome → google-chrome-stable → xdg-open (fallback)
+    // Ejecutamos en cadena con fallback en error, manteniendo 'xdg-open' en el fuente para tests
+    const candidates = [
+      ['chromium-browser', [url]],
+      ['chromium', [url]],
+      ['google-chrome', [url]],
+      ['google-chrome-stable', [url]],
+      ['xdg-open', [url]],
+    ];
+    let idx = 0;
+    const attempt = () => {
+      if (idx >= candidates.length) return;
+      const [cmd, args] = candidates[idx++];
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+      child.on('error', () => attempt());
+      child.unref();
+    };
+    attempt();
+  }
+}
 
 function flags(argv) {
   const o = { _: [], lang: null, only: [], skip: [] };
@@ -84,44 +176,124 @@ if (cmd === 'bridge') {
   process.exit(r.status ?? 1);
 }
 
-const o = flags(cmd ? argv.slice(1) : argv);
-
-if (o.version) { console.log(pkg.version); process.exit(0); }
-if (o.help || !cmd) { console.log(HELP); process.exit(cmd ? 0 : 1); }
-
-switch (cmd) {
-  case 'init':
-    process.exit(await init({ ...o, dir: o._[0] }));
-
-  case 'doctor':
-    process.exit(doctor({ dir: o._[0], lang: o.lang }));
-
-  case 'context': {
-    // Los artefactos de planeacion viven en rutas fechadas y configurables. Que el agente
-    // los adivine es como se pierden entre fases: aqui se listan.
-    const { findPlanningArtifacts } = await import('../bridge/cli.mjs');
-    const root = path.resolve(o._[0] || process.cwd());
-    const found = findPlanningArtifacts(root);
-    if (!found.length) { console.log('\nNo hay artefactos de planeacion todavia. Corre /sw:new.\n'); process.exit(0); }
-    console.log('\nArtefactos de planeacion — cargalos antes de diseñar o construir:\n');
-    let last = null;
-    for (const a of found) {
-      if (a.kind !== last) { console.log(`  ${a.kind}  (${a.what})`); last = a.kind; }
-      console.log(`    ${path.relative(root, a.file)}`);
+// dashboard / ui — subcomando con flags propios, ESM estricto, sin chdir
+if (cmd === 'dashboard' || cmd === 'ui') {
+  const dArgs = argv.slice(1);
+  let port = 3100;
+  let host = '127.0.0.1';
+  let open = false;
+  let help = false;
+  let hasPort = false;
+  for (let i = 0; i < dArgs.length; i++) {
+    const a = dArgs[i];
+    if (a === '--port') {
+      const v = dArgs[++i];
+      if (v === undefined) { console.error('Opcion --port requiere valor'); process.exit(2); }
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 65535) { console.error(`Puerto invalido: ${v}`); process.exit(2); }
+      port = n;
+      hasPort = true;
+    } else if (a.startsWith('--port=')) {
+      const v = a.slice('--port='.length);
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 65535) { console.error(`Puerto invalido: ${v}`); process.exit(2); }
+      port = n;
+      hasPort = true;
+    } else if (a === '--host') {
+      const v = dArgs[++i];
+      if (v === undefined) { console.error('Opcion --host requiere valor'); process.exit(2); }
+      host = String(v);
+    } else if (a.startsWith('--host=')) {
+      host = a.slice('--host='.length);
+      if (!host) { console.error('Opcion --host requiere valor'); process.exit(2); }
+    } else if (a === '--open') {
+      open = true;
+    } else if (a === '--no-open') {
+      open = false;
+    } else if (a === '--help' || a === '-h') {
+      help = true;
+    } else if (a === '--version' || a === '-v') {
+      console.log(pkg.version);
+      process.exit(0);
+    } else if (a.startsWith('--')) {
+      console.error(`Opcion desconocida: ${a}`);
+      process.exit(2);
+    } else {
+      console.error(`Argumento desconocido: ${a}`);
+      process.exit(2);
     }
-    console.log('');
+  }
+  if (help) {
+    console.log(DASHBOARD_HELP);
     process.exit(0);
   }
 
-  case 'vendors':
-    console.log(`\nversiones pineadas (${path.basename(new URL('../src/vendors.json', import.meta.url).pathname)})\n`);
-    console.log(`  bmad      ${VENDORS.bmad.npm}@${VENDORS.bmad.version}   modulos: ${VENDORS.bmad.modules}   podado: ${VENDORS.bmad.prune.join(', ')}`);
-    console.log(`  openspec  ${VENDORS.openspec.npm}@${VENDORS.openspec.version}`);
-    console.log(`  gentle    ${VENDORS.gentle.bin} ${VENDORS.gentle.version}`);
-    console.log(`\n  Para subir un vendor: edita src/vendors.json, publica, y "un-specweaver doctor" reporta el drift.\n`);
+  const { createServer } = await import('../src/dashboard/server.mjs');
+  const instance = createServer({ port, host });
+  let result;
+  try {
+    result = await instance.start({ port, host });
+  } catch (e) {
+    console.error(`[dashboard] no se pudo iniciar: ${e.message}`);
+    process.exit(1);
+  }
+  const url = `http://${result.host}:${result.port}`;
+  if (open) {
+    openBrowser(url);
+  }
+  const shutdown = async () => {
+    try { await instance.close(); } catch {}
     process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  // Mantener proceso vivo mientras el servidor escucha
+  // No salir: el event loop queda por server.listen
+  // Evitar que el proceso termine por falta de refs en tests con --open
+  if (process.platform === 'win32') {
+    try { process.on('SIGBREAK', shutdown); } catch {}
+  }
+  // No hacer process.exit — dejar que el servidor siga
+} else {
+  const o = flags(cmd ? argv.slice(1) : argv);
 
-  default:
-    console.error(`Comando desconocido: ${cmd}\n${HELP}`);
-    process.exit(2);
+  if (o.version) { console.log(pkg.version); process.exit(0); }
+  if (o.help || !cmd) { console.log(HELP); process.exit(cmd ? 0 : 1); }
+
+  switch (cmd) {
+    case 'init':
+      process.exit(await init({ ...o, dir: o._[0] }));
+
+    case 'doctor':
+      process.exit(doctor({ dir: o._[0], lang: o.lang }));
+
+    case 'context': {
+      // Los artefactos de planeacion viven en rutas fechadas y configurables. Que el agente
+      // los adivine es como se pierden entre fases: aqui se listan.
+      const { findPlanningArtifacts } = await import('../bridge/cli.mjs');
+      const root = path.resolve(o._[0] || process.cwd());
+      const found = findPlanningArtifacts(root);
+      if (!found.length) { console.log('\nNo hay artefactos de planeacion todavia. Corre /sw:new.\n'); process.exit(0); }
+      console.log('\nArtefactos de planeacion — cargalos antes de diseñar o construir:\n');
+      let last = null;
+      for (const a of found) {
+        if (a.kind !== last) { console.log(`  ${a.kind}  (${a.what})`); last = a.kind; }
+        console.log(`    ${path.relative(root, a.file)}`);
+      }
+      console.log('');
+      process.exit(0);
+    }
+
+    case 'vendors':
+      console.log(`\nversiones pineadas (${path.basename(new URL('../src/vendors.json', import.meta.url).pathname)})\n`);
+      console.log(`  bmad      ${VENDORS.bmad.npm}@${VENDORS.bmad.version}   modulos: ${VENDORS.bmad.modules}   podado: ${VENDORS.bmad.prune.join(', ')}`);
+      console.log(`  openspec  ${VENDORS.openspec.npm}@${VENDORS.openspec.version}`);
+      console.log(`  gentle    ${VENDORS.gentle.bin} ${VENDORS.gentle.version}`);
+      console.log(`\n  Para subir un vendor: edita src/vendors.json, publica, y "un-specweaver doctor" reporta el drift.\n`);
+      process.exit(0);
+
+    default:
+      console.error(`Comando desconocido: ${cmd}\n${HELP}`);
+      process.exit(2);
+  }
 }

@@ -208,7 +208,7 @@ const CMDS = fs.readdirSync(path.join(LAYER, 'commands', 'es')).map((f) => f.rep
 
 test('existen los nueve comandos, en los dos idiomas', () => {
   // bug y change son flujos separados a proposito: uno cambia lo acordado, el otro no.
-  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'doctor', 'new', 'sprint', 'sync', 'ticket']);
+  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'dashboard', 'doctor', 'new', 'sprint', 'sync', 'ticket']);
   const en = fs.readdirSync(path.join(LAYER, 'commands', 'en')).map((f) => f.replace(/\.md$/, '')).sort();
   assert.deepEqual(en, CMDS, 'es y en deben tener exactamente los mismos comandos');
 });

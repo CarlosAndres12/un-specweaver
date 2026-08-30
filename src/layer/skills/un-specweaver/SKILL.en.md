@@ -21,6 +21,7 @@ The bridge between them is deterministic: do not improvise it, run it.
 | `/sw:build <change-id>` | build a change |
 | `/sw:sync` | update vendors in a controlled way |
 | `/sw:doctor` | environment and flow diagnostics |
+| `/sw:dashboard` | local dashboard (alias `ui`, `--open`) |
 
 In OpenCode the same commands are `/sw-new`, `/sw-change`, and so on.
 If the user describes one of these situations without invoking the command, suggest it.

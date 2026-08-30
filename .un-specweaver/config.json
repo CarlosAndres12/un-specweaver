@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "installedAt": "2026-08-30T03:07:38.189Z",
+  "lang": "es",
+  "preferences": {
+    "lang": "es",
+    "engramScope": "project",
+    "graphify": "auto",
+    "agents": [
+      "opencode"
+    ]
+  },
+  "agents": [
+    "opencode"
+  ],
+  "vendors": {
+    "bmad": "bmad-method@6.11.0",
+    "openspec": "@fission-ai/openspec@1.10.0",
+    "gentle": "v2.4.0"
+  },
+  "optional": {
+    "graphify": {
+      "available": false,
+      "where": null,
+      "graph": null
+    },
+    "engram": {
+      "available": true,
+      "bin": "/usr/bin/engram",
+      "store": ".atl",
+      "project": "un-specweaver"
+    }
+  },
+  "pruned": [
+    "bmad-agent-dev",
+    "bmad-build",
+    "bmad-build-auto",
+    "bmad-spec",
+    "bmad-dev-story",
+    "bmad-dev-auto",
+    "bmad-quick-dev",
+    "bmad-create-story"
+  ],
+  "steps": [
+    {
+      "id": "gitignore",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "bmad",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "bmad-prune",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "openspec",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "gentle-bin",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "gentle-config",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "engram-scope",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "surface",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "layer",
+      "ok": true,
+      "error": null
+    }
+  ]
+}
