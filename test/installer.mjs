@@ -10,6 +10,7 @@ import { engramProject, engramBinding, writeState, readState } from '../src/env.
 import { t, keysOf } from '../src/i18n.mjs';
 import { resolvePrefs, parseAnswer, parseAgents, DEFAULTS, CHOICES, validateFlag } from '../src/prefs.mjs';
 import { buildPlan, STEPS, renderAction, renderCommand, commandPath, NAMESPACE, gitignoreBlock, GITIGNORE_START } from '../src/steps.mjs';
+import { init, update } from '../src/init.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const CLI = path.join(ROOT, 'bin', 'un-specweaver.mjs');
@@ -37,10 +38,10 @@ test('which no usa shell y no encuentra binarios inexistentes', () => {
 });
 
 test('el mapa de adaptadores traduce cada agente al id de cada vendor', () => {
-  const agents = [VENDORS.agents['claude-code'], VENDORS.agents['opencode']].map((c, i) => ({ id: i, ids: c.ids }));
-  assert.equal(vendorIds(agents, 'bmad'), 'claude-code,opencode');
-  assert.equal(vendorIds(agents, 'openspec'), 'claude,opencode');   // OpenSpec dice "claude", no "claude-code"
-  assert.equal(vendorIds(agents, 'gentle'), 'claude-code,opencode');
+  const agents = [VENDORS.agents['claude-code'], VENDORS.agents['opencode'], VENDORS.agents['antigravity']].map((c, i) => ({ id: i, ids: c.ids }));
+  assert.equal(vendorIds(agents, 'bmad'), 'claude-code,opencode,antigravity-cli');
+  assert.equal(vendorIds(agents, 'openspec'), 'claude,opencode,antigravity');
+  assert.equal(vendorIds(agents, 'gentle'), 'claude-code,opencode,antigravity');
 });
 
 test('preflight detecta este entorno como apto', () => {
@@ -206,9 +207,9 @@ test('renderAction imprime rutas relativas al proyecto, no absolutas', () => {
 const LAYER = path.join(ROOT, 'src', 'layer');
 const CMDS = fs.readdirSync(path.join(LAYER, 'commands', 'es')).map((f) => f.replace(/\.md$/, '')).sort();
 
-test('existen los nueve comandos, en los dos idiomas', () => {
+test('existen los comandos, en los dos idiomas', () => {
   // bug y change son flujos separados a proposito: uno cambia lo acordado, el otro no.
-  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'dashboard', 'doctor', 'new', 'sprint', 'sync', 'ticket']);
+  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'dashboard', 'doctor', 'new', 'sprint', 'sync', 'ticket', 'update']);
   const en = fs.readdirSync(path.join(LAYER, 'commands', 'en')).map((f) => f.replace(/\.md$/, '')).sort();
   assert.deepEqual(en, CMDS, 'es y en deben tener exactamente los mismos comandos');
 });
@@ -260,22 +261,24 @@ test('las referencias cruzadas se reescriben a la sintaxis del agente', () => {
 test('commandPath ubica cada comando donde su agente lo busca', () => {
   assert.equal(commandPath({ commands: '.claude/commands', commandStyle: 'namespaced' }, 'new'), path.join('.claude/commands', 'sw', 'new.md'));
   assert.equal(commandPath({ commands: '.opencode/commands', commandStyle: 'prefixed' }, 'new'), path.join('.opencode/commands', 'sw-new.md'));
+  assert.equal(commandPath({ skills: '.agents/skills', commandStyle: 'skill' }, 'new'), path.join('.agents/skills', 'sw-new', 'SKILL.md'));
 });
 
 test('la capa emite skill a todos y comandos solo a quien tiene formato documentado', () => {
   const root = tmp();
   const files = (ids) => STEPS.find((s) => s.id === 'layer').files(ctxFor(root, ids)).map((f) => path.relative(root, f.file));
 
-  const both = files(['claude-code', 'opencode']);
-  assert.equal(both.filter((f) => f.startsWith('.claude/commands')).length, CMDS.length);
-  assert.equal(both.filter((f) => f.startsWith('.opencode/commands')).length, CMDS.length);
-  assert.ok(both.includes(path.join('.claude/skills/un-specweaver', 'SKILL.md')));
-  assert.ok(both.includes(path.join('.agents/skills/un-specweaver', 'SKILL.md')));
+  const all = files(['claude-code', 'opencode', 'antigravity']);
+  assert.equal(all.filter((f) => f.startsWith('.claude/commands')).length, CMDS.length);
+  assert.equal(all.filter((f) => f.startsWith('.opencode/commands')).length, CMDS.length);
+  assert.equal(all.filter((f) => f.startsWith('.agents/skills/sw-')).length, CMDS.length);
+  assert.ok(all.includes(path.join('.claude/skills/un-specweaver', 'SKILL.md')));
+  assert.ok(all.includes(path.join('.agents/skills/un-specweaver', 'SKILL.md')));
 
   // Todo agente soportado recibe skill Y comandos: no se declara soportado uno a medias.
   for (const [id, cfg] of Object.entries(VENDORS.agents)) {
     assert.ok(cfg.commands, `${id}: un agente soportado debe tener formato de comandos`);
-    assert.ok(files([id]).some((f) => f.includes('commands')), `${id}: debe recibir los comandos`);
+    assert.ok(files([id]).some((f) => f.includes('commands') || f.includes('sw-')), `${id}: debe recibir los comandos`);
   }
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -311,7 +314,7 @@ test('los agentes se construyen con su config completa (commandStyle incluido)',
   for (const [id, cfg] of Object.entries(VENDORS.agents)) {
     if (!cfg.commands) continue;
     assert.ok(cfg.commandStyle, `${id}: tiene dir de comandos pero no commandStyle`);
-    assert.ok(['namespaced', 'prefixed'].includes(cfg.commandStyle), `${id}: commandStyle invalido`);
+    assert.ok(['namespaced', 'prefixed', 'skill'].includes(cfg.commandStyle), `${id}: commandStyle invalido`);
   }
 });
 
@@ -963,7 +966,7 @@ test('ignora el cache de skills de Gentle-AI en la raiz del proyecto', () => {
 test('solo se declaran soportados los agentes probados de punta a punta', () => {
   // Codex se saco: su toolchain desactualizada hacia fallar gentle-config en cada corrida
   // y nunca se probo el flujo completo con el. Soportar a medias es peor que no soportar.
-  assert.deepEqual(Object.keys(VENDORS.agents).sort(), ['claude-code', 'opencode']);
+  assert.deepEqual(Object.keys(VENDORS.agents).sort(), ['antigravity', 'claude-code', 'opencode']);
   for (const [id, cfg] of Object.entries(VENDORS.agents)) {
     assert.ok(cfg.skills, `${id}: falta dir de skills`);
     assert.ok(cfg.commands, `${id}: falta dir de comandos`);
@@ -971,4 +974,62 @@ test('solo se declaran soportados los agentes probados de punta a punta', () => 
     for (const v of ['bmad', 'openspec', 'gentle'])
       assert.ok(cfg.ids?.[v], `${id}: falta el id para ${v}`);
   }
+});
+
+test('update regenera la capa de skills sin pisar architecture-base.md ni openspec', async () => {
+  const root = tmp();
+  writeState(root, {
+    version: 1,
+    preferences: { ...DEFAULTS, agents: ['claude-code'] },
+    agents: ['claude-code'],
+  });
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  const customArch = '# Mi Arquitectura Personalizada\nInvariable.';
+  fs.writeFileSync(path.join(root, 'docs', 'architecture-base.md'), customArch, 'utf8');
+
+  const code = await update({ dir: root, yes: true });
+  assert.equal(code, 0);
+
+  // Skills y comandos de claude generados
+  assert.ok(fs.existsSync(path.join(root, '.claude/commands/sw/new.md')));
+  assert.ok(fs.existsSync(path.join(root, '.claude/commands/sw/update.md')));
+  assert.ok(fs.existsSync(path.join(root, '.claude/skills/un-specweaver/SKILL.md')));
+
+  // architecture-base.md no fue sobreescrito
+  assert.equal(fs.readFileSync(path.join(root, 'docs', 'architecture-base.md'), 'utf8'), customArch);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('update con --agents actualiza los agentes en config.json y emite skills de antigravity', async () => {
+  const root = tmp();
+  writeState(root, {
+    version: 1,
+    preferences: { ...DEFAULTS, agents: ['opencode'] },
+    agents: ['opencode'],
+  });
+
+  const code = await update({ dir: root, agents: 'antigravity', yes: true });
+  assert.equal(code, 0);
+
+  const state = readState(root);
+  assert.deepEqual(state.preferences.agents, ['antigravity']);
+  assert.ok(fs.existsSync(path.join(root, '.agents/skills/sw-new/SKILL.md')));
+  assert.ok(fs.existsSync(path.join(root, '.agents/skills/sw-update/SKILL.md')));
+  assert.ok(fs.existsSync(path.join(root, '.agents/skills/un-specweaver/SKILL.md')));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('update con --dry-run no escribe archivos en disco', async () => {
+  const root = tmp();
+  writeState(root, {
+    version: 1,
+    preferences: { ...DEFAULTS, agents: ['antigravity'] },
+    agents: ['antigravity'],
+  });
+
+  const code = await update({ dir: root, dryRun: true });
+  assert.equal(code, 0);
+
+  assert.ok(!fs.existsSync(path.join(root, '.agents/skills/sw-update/SKILL.md')));
+  fs.rmSync(root, { recursive: true, force: true });
 });

@@ -33,6 +33,7 @@ export {
   attachClient,
   detachClient,
   subscribe,
+  sendInput,
   _resetForTests as _resetRunnerForTests,
   _getExecutionsMap,
 } from './command-runner.mjs';

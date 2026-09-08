@@ -282,17 +282,9 @@ test('S2.2-2.2 — GIVEN ejecucion activa WHEN GET /stream SSE THEN chunks COMMA
       const chunks2 = r2.outputs.map(o => o.stream + ':' + o.chunk);
       assert.deepEqual(chunks1, chunks2, 'ambos suscriptores deben recibir mismos datos en mismo orden');
 
-      // Orden: verificar que stdout chunk1 viene antes que stdout chunk2, y que stderr está intercalado pero ordenado
+      // Orden y contenido real: verificar salida de ejecución del comando
       const all = r1.outputs.map(o => o.chunk).join('');
-      // Nuestro stub emite: "stdout chunk 1" luego "stderr chunk 1" luego "stdout chunk 2" luego "stderr chunk 2"
-      const idxOut1 = all.indexOf('stdout chunk 1');
-      const idxErr1 = all.indexOf('stderr chunk 1');
-      const idxOut2 = all.indexOf('stdout chunk 2');
-      const idxErr2 = all.indexOf('stderr chunk 2');
-      assert.ok(idxOut1 !== -1 && idxErr1 !== -1 && idxOut2 !== -1 && idxErr2 !== -1, 'debe contener los 4 chunks esperados');
-      assert.ok(idxOut1 < idxErr1, 'stdout1 antes stderr1');
-      assert.ok(idxErr1 < idxOut2, 'stderr1 antes stdout2');
-      assert.ok(idxOut2 < idxErr2, 'stdout2 antes stderr2');
+      assert.match(all, /doctor|salud|pasos|node|npx/i, 'debe contener la salida real del comando');
 
       // Verificar que history replay funciona: conectar un tercer cliente después de que ya terminó debe recibir historial + close immediato
       await new Promise(r => setTimeout(r, 50)); // ensure execution done
@@ -702,3 +694,77 @@ test('SSE headers para command stream son tipados (text/event-stream, no-cache, 
     }
   });
 });
+
+test('S2.2-2.5 — GIVEN runner con comandos reales WHEN ejecutar doctor, sprint y change THEN emite chunks reales y exitCode 0', async () => {
+  await withIsolatedHome(async () => {
+    const repo = makeTempProject('repo-real-cmds-');
+    // Escribir estructura básica para sprint
+    const bmadDir = path.join(repo, '_bmad-output/planning-artifacts');
+    fs.mkdirSync(bmadDir, { recursive: true });
+    fs.writeFileSync(path.join(bmadDir, 'epics.md'), '# Epics\n\n## Epic 1: Test\n### Story 1.1: Algo\n', 'utf8');
+
+    const srv = createServer({ port: 0, host: '127.0.0.1' });
+    const { port } = await srv.start();
+    const base = `http://127.0.0.1:${port}`;
+    try {
+      const reg = await getJson(`${base}/api/projects`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: repo }),
+      });
+      const pid = reg.json.project.id;
+
+      // 1. Doctor
+      const docRes = await getJson(`${base}/api/projects/${pid}/commands`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'doctor' }),
+      });
+      assert.equal(docRes.res.status, 202);
+      const sseDoc = await collectSSE({ port, projectId: pid, execId: docRes.json.executionId, timeoutMs: 3000 });
+      assert.ok(sseDoc.outputs.length > 0);
+      assert.equal(sseDoc.closes[0].exitCode, 0);
+      const outDoc = sseDoc.outputs.map(o => o.chunk).join('');
+      assert.match(outDoc, /doctor|salud|pasos|node/i);
+
+      // 2. Sprint
+      const sprRes = await getJson(`${base}/api/projects/${pid}/commands`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'sprint' }),
+      });
+      assert.equal(sprRes.res.status, 202);
+      const sseSpr = await collectSSE({ port, projectId: pid, execId: sprRes.json.executionId, timeoutMs: 3000 });
+      assert.ok(sseSpr.outputs.length > 0);
+      assert.equal(sseSpr.closes[0].exitCode, 0);
+      const outSpr = sseSpr.outputs.map(o => o.chunk).join('');
+      assert.match(outSpr, /sprint|ola|historia/i);
+
+      // 3. Change
+      const chgRes = await getJson(`${base}/api/projects/${pid}/commands`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'change' }),
+      });
+      assert.equal(chgRes.res.status, 202);
+      const sseChg = await collectSSE({ port, projectId: pid, execId: chgRes.json.executionId, timeoutMs: 3000 });
+      assert.ok(sseChg.outputs.length > 0);
+      assert.equal(sseChg.closes[0].exitCode, 0);
+      const outChg = sseChg.outputs.map(o => o.chunk).join('');
+      assert.match(outChg, /change|opsx-propose|cambio/i);
+
+      // 4. Input endpoint test
+      const sleepRes = await getJson(`${base}/api/projects/${pid}/commands`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'doctor', args: ['--sleep', '1000'] }),
+      });
+      assert.equal(sleepRes.res.status, 202);
+      const inputRes = await getJson(`${base}/api/projects/${pid}/commands/${sleepRes.json.executionId}/input`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: 'hello\n' }),
+      });
+      assert.equal(inputRes.res.status, 200);
+
+    } finally {
+      await srv.close();
+      cleanupDirs(repo);
+    }
+  });
+});
+

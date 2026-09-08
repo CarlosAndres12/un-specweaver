@@ -92,7 +92,7 @@ function ensureStoreDir() {
 export function detectSpecDir(projectPath) {
   try {
     const abs = path.resolve(projectPath);
-    const candidates = ['.spec', '.openspec', 'specs'];
+    const candidates = ['.spec', '.openspec', 'openspec', 'specs'];
     for (const c of candidates) {
       const full = path.join(abs, c);
       try {
@@ -322,11 +322,10 @@ export async function initProject(inputPath, name) {
     } catch {
       // import or init not available — fallback to mkdir
     }
-    // Fallback: ensure .spec exists if delegation did not create a specDir
+    // Ensure .spec directory exists for tool and test contract compatibility
     try {
-      const after = detectSpecDir(canonical);
-      if (!after) {
-        const specPath = path.join(canonical, '.spec');
+      const specPath = path.join(canonical, '.spec');
+      if (!fs.existsSync(specPath)) {
         fs.mkdirSync(specPath, { recursive: true });
       }
     } catch {

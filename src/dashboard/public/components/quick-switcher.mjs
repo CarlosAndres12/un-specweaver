@@ -120,14 +120,30 @@ export function crearQuickSwitcher(opciones = {}) {
       li.setAttribute('data-id', proyecto.id || '');
       li.setAttribute('aria-selected', String(idx === indiceSeleccionado));
       if (idx === indiceSeleccionado) li.classList.add('seleccionado');
+
+      const info = document.createElement('div');
+      info.className = 'quick-switcher-info';
       const nombre = document.createElement('span');
       nombre.className = 'quick-switcher-nombre';
       nombre.textContent = proyecto.name || 'Sin nombre';
       const ruta = document.createElement('span');
       ruta.className = 'quick-switcher-ruta';
       ruta.textContent = proyecto.path || '';
-      li.appendChild(nombre);
-      li.appendChild(ruta);
+      info.appendChild(nombre);
+      info.appendChild(ruta);
+      li.appendChild(info);
+
+      const btnActivar = document.createElement('button');
+      btnActivar.type = 'button';
+      btnActivar.className = 'btn-activar-proyecto';
+      btnActivar.textContent = 'Activar';
+      btnActivar.setAttribute('aria-label', `Activar proyecto ${proyecto.name || ''}`);
+      btnActivar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        seleccionar(idx);
+      });
+      li.appendChild(btnActivar);
+
       li.addEventListener('click', () => seleccionar(idx));
       listaEl.appendChild(li);
     });

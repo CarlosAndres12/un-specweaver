@@ -12,7 +12,7 @@
 // fingir precision.
 import { capabilityPath, changeId } from './emit-openspec.mjs';
 
-const RE_DEP = /(?:depend[ea]?\w*\s+(?:de|of|on)|requiere|requires|after|despues de|bloquead[oa]\s+por|blocked by)\s+(?:la\s+)?stor(?:y|ia)\s+(\d+\.\d+)/gi;
+const RE_DEP = /(?:depend[ea]?\w*\s+(?:de|of|on)|requiere|requires|after|despues de|bloquead[oa]\s+por|blocked by)[\s:*`]+(?:la\s+)?stor(?:y|ia)\s+(\d+\.\d+)/gi;
 
 export function planSprint(doc) {
   const nodes = [];

@@ -162,27 +162,97 @@ export function renderTablero(contenedor, estado, diagramaMarkup = '') {
   const listaEnProgreso = q('#lista-en-progreso');
   const listaCompletada = q('#lista-completada');
 
-  function poblarLista(ul, items) {
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function poblarLista(ul, items, tipo) {
     if (!ul) return;
     ul.innerHTML = '';
     if (items.length === 0) {
       const li = document.createElement('li');
-      li.textContent = '—';
+      li.className = 'epic-item-vacio';
+      li.textContent = '— Sin épicas en esta columna —';
       li.style.color = '#94a3b8';
       ul.appendChild(li);
       return;
     }
     for (const e of items) {
       const li = document.createElement('li');
-      li.textContent = e.title || e.name || e.id || 'Épica sin título';
-      if (e.status) li.title = `Estado: ${e.status}`;
+      li.className = `tarjeta-epica-interactiva estado-${tipo || 'pendiente'}`;
+      const title = e.title || e.name || e.id || 'Épica sin título';
+      const epicId = e.id || '';
+      const stories = Array.isArray(e.stories) ? e.stories : [];
+
+      li.innerHTML = `
+        <div class="epica-cabecera">
+          <div class="epica-info-principal">
+            <span class="epica-badge-tag">${epicId ? `Épica ${epicId}` : 'Épica'}</span>
+            <strong class="epica-titulo">${escapeHtml(title)}</strong>
+          </div>
+          <span class="epica-status-pill">${e.status || tipo || 'pendiente'}</span>
+        </div>
+        ${e.description ? `<p class="epica-descripcion">${escapeHtml(e.description)}</p>` : ''}
+        ${stories.length > 0 ? `
+          <div class="epica-historias-resumen">
+            <span class="historias-conteo">📑 ${stories.length} ${stories.length === 1 ? 'historia' : 'historias'}</span>
+            <div class="historias-lista-tags">
+              ${stories.map((st) => `<span class="historia-tag" title="${escapeHtml(st.title || '')}">Story ${st.story || st.id || ''}</span>`).join('')}
+            </div>
+          </div>
+        ` : ''}
+        <div class="epica-acciones-fila">
+          <button type="button" class="btn-accion-epica btn-construir-epica" data-epic="${epicId}" data-title="${escapeHtml(title)}" title="Ejecutar /sw:build para esta épica">
+            🔨 Construir (/sw:build)
+          </button>
+          <button type="button" class="btn-accion-epica btn-pi-epica" data-epic="${epicId}" data-title="${escapeHtml(title)}" title="Abrir agente Pi enfocado en esta épica">
+            🤖 Abrir con Pi
+          </button>
+        </div>
+      `;
+
+      // Event listeners
+      const btnBuild = li.querySelector('.btn-construir-epica');
+      if (btnBuild) {
+        btnBuild.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const pid = estado?.project?.id || '';
+          if (typeof window !== 'undefined' && window.__terminalDrawer && typeof window.__terminalDrawer.ejecutar === 'function') {
+            window.__terminalDrawer.abrir();
+            const args = epicId ? ['--epic', String(epicId)] : [];
+            window.__terminalDrawer.ejecutar('build', pid, args);
+          } else if (typeof window !== 'undefined' && typeof window.__dashboardEjecutar === 'function') {
+            window.__dashboardEjecutar('build', ['--epic', String(epicId)]);
+          }
+        });
+      }
+
+      const btnPi = li.querySelector('.btn-pi-epica');
+      if (btnPi) {
+        btnPi.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const pid = estado?.project?.id || '';
+          if (typeof window !== 'undefined' && window.__terminalDrawer && typeof window.__terminalDrawer.ejecutar === 'function') {
+            window.__terminalDrawer.abrir();
+            window.__terminalDrawer.ejecutar('pi', pid, []);
+          } else if (typeof window !== 'undefined' && typeof window.__dashboardEjecutar === 'function') {
+            window.__dashboardEjecutar('pi', []);
+          }
+        });
+      }
+
       ul.appendChild(li);
     }
   }
 
-  poblarLista(listaPendiente, grupos.pendiente);
-  poblarLista(listaEnProgreso, grupos.en_progreso);
-  poblarLista(listaCompletada, grupos.completada);
+  poblarLista(listaPendiente, grupos.pendiente, 'pendiente');
+  poblarLista(listaEnProgreso, grupos.en_progreso, 'en_progreso');
+  poblarLista(listaCompletada, grupos.completada, 'completada');
 
   // --- Salud del proyecto ---
   const saludDetalle = q('#salud-detalle');

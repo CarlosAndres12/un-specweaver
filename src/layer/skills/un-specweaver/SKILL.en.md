@@ -14,6 +14,7 @@ The bridge between them is deterministic: do not improvise it, run it.
 |---|---|
 | `/sw:new` | project from scratch |
 | `/sw:adopt` | project that already exists |
+| `/sw:update` | update skills, commands and agents in an existing project |
 | `/sw:change "<req>"` | new requirement: changes what was agreed, **goes through scope control** |
 | `/sw:bug "<defect>"` | defect: what was agreed is right, the implementation does not meet it |
 | `/sw:ticket <n>` | GitHub issue: classifies and routes to one of the two above |

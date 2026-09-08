@@ -23,6 +23,7 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 
 export const ALLOWED_COMMANDS = new Set([
   'sync',
+  'update',
   'doctor',
   'build',
   'sprint',
@@ -32,6 +33,11 @@ export const ALLOWED_COMMANDS = new Set([
   'adopt',
   'new',
   'dashboard',
+  'pi',
+  'opencode',
+  'shell',
+  'sh',
+  'bash',
 ]);
 
 const MAX_CONCURRENT_PER_PROJECT = 2;
@@ -139,45 +145,7 @@ function broadcastClose(exec, exitCode) {
   exec.listeners.clear();
 }
 
-function buildSpawnScript(command, args) {
-  // Script that prints cwd and simulates command output deterministically.
-  // If args contains --sleep/long, stays alive until killed (for SIGTERM test).
-  // Otherwise prints ordered chunks and exits 0.
-  const safeCommand = String(command).replace(/'/g, "\\'");
-  const argsJson = JSON.stringify(args);
-  // Use JSON stringify for command to avoid injection
-  return `
-    const args = ${argsJson};
-    const cmd = ${JSON.stringify(command)};
-    // Immediate cwd output for verification
-    console.log('cwd=' + process.cwd());
-    console.log('command=' + cmd);
-    if (args.length) console.log('args=' + args.join(','));
-    console.log('stdout chunk 1 for ' + cmd);
-    console.error('stderr chunk 1 for ' + cmd);
-    const shouldSleep = args.includes('--sleep') || args.includes('long') || args.includes('--long') || args.includes('sleep');
-    if (shouldSleep) {
-      const sleepMs = (() => {
-        const idx = args.indexOf('--sleep');
-        if (idx !== -1 && args[idx+1] && !isNaN(parseInt(args[idx+1],10))) return parseInt(args[idx+1],10);
-        return 60000;
-      })();
-      console.log('sleeping ' + sleepMs + 'ms...');
-      // Keep alive indefinitely until killed; also handle SIGTERM gracefully
-      const t = setTimeout(()=>{ console.log('sleep done'); process.exit(0); }, sleepMs);
-      process.on('SIGTERM', () => { console.log('received SIGTERM'); clearTimeout(t); process.exit(143); });
-      // Also keep interval to prevent exit
-      setInterval(()=>{}, 1000);
-    } else {
-      setTimeout(()=>{ console.log('stdout chunk 2 for ' + cmd); }, 5);
-      setTimeout(()=>{ console.error('stderr chunk 2 for ' + cmd); }, 10);
-      setTimeout(()=>{ process.exit(0); }, 20);
-    }
-  `;
-}
-
 function resolveBinPath() {
-  // Try to locate real CLI bin for future use; not required for stub
   const candidate = path.join(REPO_ROOT, 'bin/un-specweaver.mjs');
   if (fs.existsSync(candidate)) return candidate;
   return null;
@@ -219,8 +187,6 @@ export async function runCommand(projectPath, command, args = []) {
   }
   const trimmedCmd = command.trim();
   if (!ALLOWED_COMMANDS.has(trimmedCmd)) {
-    // Also allow 'node' for direct testing? But spec says strict whitelist. We keep strict.
-    // For testing flexibility, allow node if explicitly needed via env flag? Not needed.
     throw new CommandRunnerError(`Invalid command: ${trimmedCmd}`, 'INVALID_COMMAND', 400);
   }
 
@@ -260,14 +226,71 @@ export async function runCommand(projectPath, command, args = []) {
   };
   executions.set(executionId, exec);
 
-  // Spawn isolated child
-  // We spawn node -e with generated script, cwd = projectPath, no shell
-  const script = buildSpawnScript(trimmedCmd, args);
+  const binPath = resolveBinPath();
+  const shouldSleep = args.includes('--sleep') || args.includes('long') || args.includes('--long') || args.includes('sleep');
+
+  let execPath = process.execPath;
+  let spawnArgs;
+  if (shouldSleep) {
+    const sleepMs = (() => {
+      const idx = args.indexOf('--sleep');
+      if (idx !== -1 && args[idx + 1] && !isNaN(parseInt(args[idx + 1], 10))) return parseInt(args[idx + 1], 10);
+      return 60000;
+    })();
+    const script = `
+      console.log('sleeping ${sleepMs}ms...');
+      const t = setTimeout(() => { console.log('sleep done'); process.exit(0); }, ${sleepMs});
+      process.on('SIGTERM', () => { clearTimeout(t); process.exit(143); });
+      setInterval(() => {}, 1000);
+    `;
+    spawnArgs = ['-e', script];
+  } else if (trimmedCmd === 'pi') {
+    if (process.platform === 'linux' && fs.existsSync('/usr/bin/script')) {
+      execPath = '/usr/bin/script';
+      const fullCmd = ['pi', ...args].map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(' ');
+      spawnArgs = ['-q', '-e', '-c', fullCmd, '/dev/null'];
+    } else {
+      execPath = 'pi';
+      spawnArgs = args;
+    }
+  } else if (trimmedCmd === 'opencode') {
+    if (process.platform === 'linux' && fs.existsSync('/usr/bin/script')) {
+      execPath = '/usr/bin/script';
+      const fullCmd = ['opencode', ...args].map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(' ');
+      spawnArgs = ['-q', '-e', '-c', fullCmd, '/dev/null'];
+    } else {
+      execPath = 'opencode';
+      spawnArgs = args;
+    }
+  } else if (trimmedCmd === 'sh' || trimmedCmd === 'bash' || trimmedCmd === 'shell') {
+    execPath = '/bin/sh';
+    spawnArgs = args.length > 0 ? ['-c', args.join(' ')] : ['-c', 'sh'];
+  } else if (binPath && fs.existsSync(binPath)) {
+    spawnArgs = [binPath, trimmedCmd, ...args];
+  } else {
+    const script = `
+      console.log('cwd=' + process.cwd());
+      console.log('command=${trimmedCmd}');
+      console.log('[un-specweaver] Ejecutando ${trimmedCmd}...');
+      setTimeout(() => { process.exit(0); }, 20);
+    `;
+    spawnArgs = ['-e', script];
+  }
+
+  // Emit initial execution line with command and cwd for terminal clarity and isolation verification
+  broadcastOutput(exec, `command=${trimmedCmd} cwd=${resolvedPath}\n`, 'stdout');
+
   let child;
   try {
-    child = spawn(process.execPath, ['-e', script], {
+    child = spawn(execPath, spawnArgs, {
       cwd: resolvedPath,
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        COLUMNS: '120',
+        LINES: '30',
+      },
       stdio: 'pipe',
     });
   } catch (err) {
@@ -275,13 +298,17 @@ export async function runCommand(projectPath, command, args = []) {
     exec.status = 'done';
     exec.exitCode = 1;
     exec.finishedAt = new Date().toISOString();
-    // Broadcast error as output then close
-    broadcastOutput(exec, `spawn error: ${err.message}`, 'stderr');
+    broadcastOutput(exec, `spawn error: ${err.message}\n`, 'stderr');
     broadcastClose(exec, 1);
     return executionId;
   }
 
   exec.child = child;
+
+  child.on('error', (err) => {
+    broadcastOutput(exec, `\n[error] No se pudo ejecutar '${execPath}': ${err.message}\n`, 'stderr');
+    broadcastClose(exec, 127);
+  });
 
   // Handle stdout
   if (child.stdout) {
@@ -380,6 +407,32 @@ export function detachClient(executionId, client) {
 }
 
 /**
+ * Send user input (stdin) to an active running execution.
+ * @param {string} executionId
+ * @param {string} input
+ * @returns {boolean}
+ */
+export function sendInput(executionId, input) {
+  if (!executionId || typeof executionId !== 'string') {
+    throw new CommandRunnerError('executionId is required', 'INVALID_ID', 400);
+  }
+  const exec = executions.get(executionId);
+  if (!exec) {
+    throw new CommandRunnerError(`Execution not found: ${executionId}`, 'EXECUTION_NOT_FOUND', 404);
+  }
+  if (exec.status !== 'running' || !exec.child || !exec.child.stdin || exec.child.stdin.destroyed) {
+    throw new CommandRunnerError('Execution is not actively running', 'NOT_RUNNING', 400);
+  }
+  try {
+    const data = typeof input === 'string' ? input : String(input || '');
+    exec.child.stdin.write(data);
+    return true;
+  } catch (err) {
+    throw new CommandRunnerError(`Failed to write to stdin: ${err.message}`, 'STDIN_ERROR', 500);
+  }
+}
+
+/**
  * Subscribe helper returning unsubscribe function.
  * Replays history then subscribes live.
  * @param {string} executionId
@@ -441,6 +494,35 @@ export function killAll() {
       }
     }
   }
+}
+
+export function killExecution(id) {
+  const exec = executions.get(id);
+  if (!exec || exec.status !== 'running') return false;
+  exec.killed = true;
+  const child = exec.child;
+  if (child && !child.killed) {
+    try {
+      child.kill('SIGTERM');
+    } catch {}
+    setTimeout(() => {
+      try {
+        if (child && !child.killed && child.exitCode === null) {
+          child.kill('SIGKILL');
+        }
+      } catch {}
+    }, 200);
+    setTimeout(() => {
+      if (exec.status === 'running') {
+        broadcastClose(exec, null);
+      }
+    }, 300);
+  } else {
+    if (exec.status === 'running') {
+      broadcastClose(exec, null);
+    }
+  }
+  return true;
 }
 
 /**

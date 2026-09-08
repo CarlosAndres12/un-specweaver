@@ -135,6 +135,7 @@ ${cmds}
     'step.depAfter': (dep) => `se revisa tras "${dep}"`,
     'step.nothing': 'nada que podar',
 
+    'doctor.fixing': 'Reparando salud del proyecto...',
     'doctor.header': (root) => `\nspecweaver doctor  —  ${root}\n`,
     'doctor.installed': (at, agents) => `\n  instalado  ${at}  agentes: ${agents}`,
     'doctor.noState': '\n  aviso  este proyecto no tiene .un-specweaver/config.json — corre "un-specweaver init"',
@@ -308,6 +309,7 @@ ${cmds}
     'step.depAfter': (dep) => `re-checked after "${dep}"`,
     'step.nothing': 'nothing to prune',
 
+    'doctor.fixing': 'Repairing project health...',
     'doctor.header': (root) => `\nspecweaver doctor  —  ${root}\n`,
     'doctor.installed': (at, agents) => `\n  installed  ${at}  agents: ${agents}`,
     'doctor.noState': '\n  warn   this project has no .un-specweaver/config.json — run "un-specweaver init"',

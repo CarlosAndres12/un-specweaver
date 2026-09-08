@@ -14,6 +14,7 @@ El puente entre ambos es deterministico: no lo improvises, ejecutalo.
 |---|---|
 | `/sw:new` | proyecto desde cero |
 | `/sw:adopt` | proyecto que ya existe |
+| `/sw:update` | actualizar skills, comandos y agentes de un proyecto existente |
 | `/sw:change "<req>"` | requerimiento nuevo: cambia lo acordado, **pasa por control de alcance** |
 | `/sw:bug "<defecto>"` | defecto: lo acordado esta bien, la implementacion no lo cumple |
 | `/sw:ticket <n>` | issue de GitHub: clasifica y enruta a uno de los dos anteriores |

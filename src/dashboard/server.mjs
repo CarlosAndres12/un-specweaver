@@ -18,6 +18,7 @@ import * as pm from './project-manager.mjs';
 import * as runner from './command-runner.mjs';
 import * as stateAdapter from './state-adapter.mjs';
 import * as watcher from './watcher.mjs';
+import { crearProyectoWizard } from './wizard-service.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,11 +84,18 @@ function getMime(filePath) {
   return MIME[ext] || 'application/octet-stream';
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization, X-Requested-With',
+};
+
 function sendJson(res, statusCode, data, extraHeaders = {}) {
   const body = JSON.stringify(data);
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
+    ...CORS_HEADERS,
     ...extraHeaders,
   };
   res.writeHead(statusCode, headers);
@@ -98,6 +106,7 @@ function sendHtml(res, statusCode, html, extraHeaders = {}) {
   const headers = {
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Length': Buffer.byteLength(html),
+    ...CORS_HEADERS,
     ...extraHeaders,
   };
   res.writeHead(statusCode, headers);
@@ -240,6 +249,7 @@ export function createServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, publicD
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
+      ...CORS_HEADERS,
     });
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
     // initial comment to establish connection
@@ -315,6 +325,7 @@ export function createServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, publicD
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
+      ...CORS_HEADERS,
     });
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
     if (req.socket) req.socket.setTimeout(0);
@@ -383,6 +394,13 @@ export function createServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, publicD
   const server = http.createServer(async (req, res) => {
     try {
       const method = req.method || 'GET';
+      // Handle CORS preflight
+      if (method === 'OPTIONS') {
+        res.writeHead(204, CORS_HEADERS);
+        res.end();
+        return;
+      }
+
       // Use host from header or default for URL parsing
       const hostHeader = req.headers.host || `${host}:${port}`;
       const urlObj = new URL(req.url || '/', `http://${hostHeader}`);
@@ -465,6 +483,35 @@ export function createServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, publicD
         return;
       }
 
+      // --- POST /api/projects/wizard --- Story 5.3
+      if (pathname === '/api/projects/wizard' && method === 'POST') {
+        try {
+          const body = await readJsonBody(req);
+          const rawPath = body?.path ?? body?.projectPath;
+          if (!rawPath || typeof rawPath !== 'string' || String(rawPath).trim() === '') {
+            throw new pm.ProjectManagerError('Missing path', 'INVALID_PATH', 400);
+          }
+          const { project, files } = await crearProyectoWizard(body);
+          let executionId = null;
+          try {
+            const exec = await runner.runCommand(project.id, project.path, 'adopt', []);
+            executionId = exec.executionId;
+          } catch {}
+          sendJson(res, 201, { project, executionId, files });
+        } catch (err) {
+          if (!sendTypedError(res, err)) {
+            if (err && err.code === 'INVALID_JSON') {
+              sendJson(res, 400, { code: 'INVALID_JSON', error: { code: 'INVALID_JSON', message: err.message }, message: err.message });
+            } else if (err && err.code === 'INVALID_PATH') {
+              sendJson(res, 400, { code: 'INVALID_PATH', error: { code: 'INVALID_PATH', message: err.message }, message: err.message });
+            } else {
+              sendJson(res, 500, { code: 'INTERNAL', message: String(err.message || err) });
+            }
+          }
+        }
+        return;
+      }
+
       // --- PUT/POST /api/projects/active con body { id } ---
       if (pathname === '/api/projects/active' && (method === 'PUT' || method === 'POST')) {
         let attemptedId = null;
@@ -517,6 +564,78 @@ export function createServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, publicD
         try {
           const state = await tryGetConsolidatedState(id);
           sendJson(res, 200, state);
+        } catch (err) {
+          if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
+            sendProjectNotFound(res, id);
+          } else if (!sendTypedError(res, err)) {
+            sendJson(res, 500, { code: 'INTERNAL', message: String(err.message || err) });
+          }
+        }
+        return;
+      }
+
+      // --- GET /api/projects/:id/graph — React Flow graph data (Story 8.2 & 8.3) ---
+      const graphMatch = pathname.match(/^\/api\/projects\/([^/]+)\/graph$/);
+      if (graphMatch && method === 'GET') {
+        const id = decodeURIComponent(graphMatch[1]);
+        try {
+          const project = await pm.getProject(id);
+          const graphData = await stateAdapter.getGraphData(project.path);
+          sendJson(res, 200, graphData);
+        } catch (err) {
+          if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
+            sendProjectNotFound(res, id);
+          } else if (!sendTypedError(res, err)) {
+            sendJson(res, 500, { code: 'INTERNAL', message: String(err.message || err) });
+          }
+        }
+        return;
+      }
+
+      // --- POST / DELETE /api/projects/:id/graph/edges — Bi-directional edge mutation (Story 8.3) ---
+      const graphEdgesMatch = pathname.match(/^\/api\/projects\/([^/]+)\/graph\/edges$/);
+      if (graphEdgesMatch && (method === 'POST' || method === 'DELETE')) {
+        const id = decodeURIComponent(graphEdgesMatch[1]);
+        try {
+          const project = await pm.getProject(id);
+          const body = await readJsonBody(req);
+          const { source, target, action = (method === 'DELETE' ? 'remove' : 'add') } = body || {};
+          if (!source || !target) {
+            sendJson(res, 400, { code: 'INVALID_PARAMS', message: 'source and target required' });
+            return;
+          }
+          const result = await stateAdapter.updateGraphEdge(project.path, { source, target, action });
+          if (result.error === 'CIRCULAR_DEPENDENCY') {
+            sendJson(res, 400, { code: 'CIRCULAR_DEPENDENCY', message: 'Circular dependency detected' });
+            return;
+          }
+          if (result.error) {
+            sendJson(res, 400, { code: 'MUTATION_FAILED', message: result.error });
+            return;
+          }
+          broadcast('graph_updated', { projectId: id, action, source, target });
+          sendJson(res, 200, result);
+        } catch (err) {
+          if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
+            sendProjectNotFound(res, id);
+          } else if (!sendTypedError(res, err)) {
+            sendJson(res, 500, { code: 'INTERNAL', message: String(err.message || err) });
+          }
+        }
+        return;
+      }
+
+      // --- PATCH /api/projects/:id/graph/nodes/:nodeId — Story property mutation (Story 8.3) ---
+      const graphNodeMatch = pathname.match(/^\/api\/projects\/([^/]+)\/graph\/nodes\/([^/]+)$/);
+      if (graphNodeMatch && method === 'PATCH') {
+        const id = decodeURIComponent(graphNodeMatch[1]);
+        const nodeId = decodeURIComponent(graphNodeMatch[2]);
+        try {
+          const project = await pm.getProject(id);
+          const body = await readJsonBody(req);
+          const result = await stateAdapter.updateStory(project.path, { storyId: nodeId, ...(body || {}) });
+          broadcast('graph_updated', { projectId: id, action: 'update_node', nodeId });
+          sendJson(res, 200, result);
         } catch (err) {
           if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
             sendProjectNotFound(res, id);
@@ -743,6 +862,80 @@ export function createServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, publicD
             return;
           }
           handleSseCommandExecution(req, res, execId);
+        } catch (err) {
+          if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
+            sendProjectNotFound(res, id);
+          } else if (!sendTypedError(res, err)) {
+            sendJson(res, 500, { code: 'INTERNAL', message: String(err.message || err) });
+          }
+        }
+        return;
+      }
+
+      const inputMatch = pathname.match(/^\/api\/projects\/([^/]+)\/commands\/([^/]+)\/input$/);
+      if (inputMatch && method === 'POST') {
+        const id = decodeURIComponent(inputMatch[1]);
+        const execId = decodeURIComponent(inputMatch[2]);
+        try {
+          const project = await pm.getProject(id);
+          const body = await readJsonBody(req);
+          const input = body?.input ?? '';
+          const exec = runner.getExecution(execId);
+          if (!exec) {
+            sendJson(res, 404, {
+              code: 'EXECUTION_NOT_FOUND',
+              error: { code: 'EXECUTION_NOT_FOUND', message: `Execution not found: ${execId}` },
+              message: `Execution not found: ${execId}`,
+            });
+            return;
+          }
+          if (path.resolve(exec.projectPath) !== path.resolve(project.path)) {
+            sendJson(res, 404, {
+              code: 'EXECUTION_NOT_FOUND',
+              error: { code: 'EXECUTION_NOT_FOUND', message: `Execution not found for project: ${execId}` },
+              message: `Execution not found for project: ${execId}`,
+            });
+            return;
+          }
+          runner.sendInput(execId, input);
+          sendJson(res, 200, { ok: true });
+        } catch (err) {
+          if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
+            sendProjectNotFound(res, id);
+          } else if (err && err.code === 'NOT_RUNNING') {
+            sendJson(res, 400, { code: 'NOT_RUNNING', error: { code: 'NOT_RUNNING', message: err.message }, message: err.message });
+          } else if (!sendTypedError(res, err)) {
+            sendJson(res, 500, { code: 'INTERNAL', message: String(err.message || err) });
+          }
+        }
+        return;
+      }
+
+      const cancelMatch = pathname.match(/^\/api\/projects\/([^/]+)\/commands\/([^/]+)$/);
+      if (cancelMatch && method === 'DELETE') {
+        const id = decodeURIComponent(cancelMatch[1]);
+        const execId = decodeURIComponent(cancelMatch[2]);
+        try {
+          const project = await pm.getProject(id);
+          const exec = runner.getExecution(execId);
+          if (!exec) {
+            sendJson(res, 404, {
+              code: 'EXECUTION_NOT_FOUND',
+              error: { code: 'EXECUTION_NOT_FOUND', message: `Execution not found: ${execId}` },
+              message: `Execution not found: ${execId}`,
+            });
+            return;
+          }
+          if (path.resolve(exec.projectPath) !== path.resolve(project.path)) {
+            sendJson(res, 404, {
+              code: 'EXECUTION_NOT_FOUND',
+              error: { code: 'EXECUTION_NOT_FOUND', message: `Execution not found for project: ${execId}` },
+              message: `Execution not found for project: ${execId}`,
+            });
+            return;
+          }
+          runner.killExecution(execId);
+          sendJson(res, 200, { ok: true, executionId: execId });
         } catch (err) {
           if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
             sendProjectNotFound(res, id);

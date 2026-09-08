@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { init, doctor } from '../src/init.mjs';
+import { init, doctor, update } from '../src/init.mjs';
 import { VENDORS } from '../src/env.mjs';
 
 const pkg = createRequire(import.meta.url)('../package.json');
@@ -13,7 +13,8 @@ un-specweaver ${pkg.version} — flujo de desarrollo dirigido por especificacion
 
 USO
   npx un-specweaver init [dir]        prepara el entorno completo en un proyecto
-  npx un-specweaver doctor [dir]      revisa salud, pasos pendientes y drift de vendors
+  npx un-specweaver update [dir]      actualiza la capa de skills, comandos y configuracion
+  npx un-specweaver doctor [dir] [--fix] revisa salud, pasos pendientes y drift de vendors
   npx un-specweaver bridge <epics.md> convierte stories de BMAD en changes de OpenSpec
   npx un-specweaver context        lista los artefactos de planeacion a cargar
   npx un-specweaver vendors           muestra las versiones pineadas
@@ -37,6 +38,11 @@ INIT
   --only <ids>     corre solo estos pasos (coma-separados)
   --skip <ids>     omite estos pasos
   --keep-going     no se detiene en el primer paso que falle
+
+UPDATE
+  npx un-specweaver update [dir] [--agents <ids>] [--lang es|en] [--vendors] [--dry-run]
+  Actualiza comandos /sw:*, skills de agentes y .gitignore sin tocar arquitectura ni especificaciones.
+  --vendors        reconcilia tambien dependencias upstream (BMAD, OpenSpec, Gentle-AI)
 
 QUE HACE INIT
   1. preflight: node >= 20.11, npx, curl, plataforma
@@ -152,11 +158,13 @@ function flags(argv) {
     else if (a === '--dry-run') o.dryRun = true;
     else if (a === '--yes' || a === '-y') o.yes = true;
     else if (a === '--force') o.force = true;
+    else if (a === '--fix') o.fix = true;
     else if (a === '--prune-extra') o.pruneExtra = true;
     else if (a === '--keep-vendor-commands') o.keepVendorCommands = true;
     else if (a === '--keep-going') o.keepGoing = true;
     else if (a === '--only') o.only = argv[++i].split(',').map((s) => s.trim());
     else if (a === '--skip') o.skip = argv[++i].split(',').map((s) => s.trim());
+    else if (a === '--vendors') o.vendors = true;
     else if (a === '--help' || a === '-h') o.help = true;
     else if (a === '--version' || a === '-v') o.version = true;
     else if (a.startsWith('--')) { console.error(`Opcion desconocida: ${a}`); process.exit(2); }
@@ -241,15 +249,15 @@ if (cmd === 'dashboard' || cmd === 'ui') {
   if (open) {
     openBrowser(url);
   }
+  const keepAlive = setInterval(() => {}, 60000);
   const shutdown = async () => {
+    try { clearInterval(keepAlive); } catch {}
     try { await instance.close(); } catch {}
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
   // Mantener proceso vivo mientras el servidor escucha
-  // No salir: el event loop queda por server.listen
-  // Evitar que el proceso termine por falta de refs en tests con --open
   if (process.platform === 'win32') {
     try { process.on('SIGBREAK', shutdown); } catch {}
   }
@@ -264,12 +272,99 @@ if (cmd === 'dashboard' || cmd === 'ui') {
     case 'init':
       process.exit(await init({ ...o, dir: o._[0] }));
 
+    case 'update':
+      process.exit(await update({ ...o, dir: o._[0] }));
+
+    case 'adopt':
+      process.exit(await init({ ...o, dir: o._[0] || process.cwd(), yes: true, force: true }));
+
+    case 'new':
+      process.exit(await init({ ...o, dir: o._[0] || process.cwd(), yes: true }));
+
     case 'doctor':
-      process.exit(doctor({ dir: o._[0], lang: o.lang }));
+      process.exit(await doctor({ dir: o._[0] || process.cwd(), lang: o.lang, fix: !!o.fix }));
+
+    case 'sprint': {
+      const { parseEpics } = await import('../bridge/parse-epics.mjs');
+      const { planSprint } = await import('../bridge/plan-sprint.mjs');
+      const fs = await import('node:fs');
+      const root = path.resolve(o._[0] || process.cwd());
+      const epicsFile = path.join(root, '_bmad-output/planning-artifacts/epics.md');
+      if (!fs.existsSync(epicsFile)) {
+        console.log('No se encontro epics.md. Genera artefactos de planeacion con BMAD.');
+        process.exit(0);
+      }
+      const content = fs.readFileSync(epicsFile, 'utf8');
+      const parsed = parseEpics(content);
+      const plan = planSprint(parsed);
+      console.log(`\nPlan de Sprint — ${plan.nodes.length} historias en ${plan.waves.length} olas:\n`);
+      plan.waves.forEach((w, idx) => {
+        console.log(`  🌊 Ola ${idx + 1} (${w.length} historias en paralelo):`);
+        w.forEach((st) => console.log(`     • [Story ${st.story}] ${st.title} (${st.capability})`));
+      });
+      console.log('');
+      process.exit(0);
+    }
+
+    case 'sync': {
+      const fs = await import('node:fs');
+      const root = path.resolve(o._[0] || process.cwd());
+      const epicsFile = path.join(root, '_bmad-output/planning-artifacts/epics.md');
+      if (fs.existsSync(epicsFile)) {
+        const cli = new URL('../bridge/cli.mjs', import.meta.url);
+        const r = spawnSync(process.execPath, [cli.pathname, epicsFile], { cwd: root, stdio: 'inherit' });
+        process.exit(r.status ?? 0);
+      } else {
+        console.log('Sincronizando estado...');
+        doctor({ dir: root });
+        process.exit(0);
+      }
+    }
+
+    case 'build': {
+      const fs = await import('node:fs');
+      const root = path.resolve(o._[0] || process.cwd());
+      const epicsFile = path.join(root, '_bmad-output/planning-artifacts/epics.md');
+      const extraArgs = argv.slice(1).filter((a) => a !== root);
+      if (fs.existsSync(epicsFile)) {
+        const cli = new URL('../bridge/cli.mjs', import.meta.url);
+        const cliArgs = [cli.pathname, epicsFile];
+        if (extraArgs.length > 0) {
+          cliArgs.push(...extraArgs);
+        } else {
+          cliArgs.push('--strict');
+        }
+        const r = spawnSync(process.execPath, cliArgs, { cwd: root, stdio: 'inherit' });
+        process.exit(r.status ?? 0);
+      } else {
+        console.log('Validando especificaciones de OpenSpec/SDD...');
+        const cli = new URL('../bridge/cli.mjs', import.meta.url);
+        const r = spawnSync(process.execPath, [cli.pathname, '--strict', ...extraArgs], { cwd: root, stdio: 'inherit' });
+        process.exit(r.status ?? 0);
+      }
+    }
+
+    case 'change': {
+      console.log('\n[un-specweaver change] Creación de nuevo cambio con control de alcance');
+      console.log('Para iniciar el cambio con OpenSpec, ejecuta en tu agente:');
+      console.log('  /opsx-propose "<descripcion de tu cambio>"\n');
+      process.exit(0);
+    }
+
+    case 'bug': {
+      console.log('\n[un-specweaver bug] Registro y corrección de defecto');
+      console.log('Para corregir un defecto sin alterar el PRD, ejecuta en tu agente:');
+      console.log('  /opsx-propose "fix: <descripcion del defecto>"\n');
+      process.exit(0);
+    }
+
+    case 'ticket': {
+      console.log('\n[un-specweaver ticket] Clasificación de ticket o issue de GitHub');
+      console.log('Para clasificar un ticket, ejecuta /sw:ticket en tu agente IA.\n');
+      process.exit(0);
+    }
 
     case 'context': {
-      // Los artefactos de planeacion viven en rutas fechadas y configurables. Que el agente
-      // los adivine es como se pierden entre fases: aqui se listan.
       const { findPlanningArtifacts } = await import('../bridge/cli.mjs');
       const root = path.resolve(o._[0] || process.cwd());
       const found = findPlanningArtifacts(root);

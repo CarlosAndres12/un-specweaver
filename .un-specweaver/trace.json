@@ -368,6 +368,328 @@
       },
       "requirementName": "Batería de tests automatizados",
       "scenarios": 2
+    },
+    {
+      "changeId": "e5s1-formulario-multi-paso-interactivo-en-frontend-sp",
+      "capability": "asistente-interactivo-multi-paso-de-creacion-de-proyecto-bri",
+      "bmad": {
+        "epic": 5,
+        "epicTitle": "Asistente Interactivo Multi-Paso de Creación de Proyecto (Brief + PRD Numerado)",
+        "story": "5.1",
+        "storyTitle": "Formulario multi-paso interactivo en Frontend SPA"
+      },
+      "requirements": [
+        "FR-070",
+        "FR-071",
+        "FR-072",
+        "FR-073"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-070",
+          "FR-071",
+          "FR-072",
+          "FR-073"
+        ],
+        "epic": []
+      },
+      "requirementName": "Formulario multi-paso interactivo en Frontend SPA",
+      "scenarios": 3
+    },
+    {
+      "changeId": "e5s2-generador-deterministico-de-product-brief-y-prd",
+      "capability": "asistente-interactivo-multi-paso-de-creacion-de-proyecto-bri",
+      "bmad": {
+        "epic": 5,
+        "epicTitle": "Asistente Interactivo Multi-Paso de Creación de Proyecto (Brief + PRD Numerado)",
+        "story": "5.2",
+        "storyTitle": "Generador determinístico de Product Brief y PRD con requisitos numerados"
+      },
+      "requirements": [
+        "FR-071",
+        "FR-072",
+        "FR-074",
+        "FR-001",
+        "FR-002",
+        "NFR-001"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-071",
+          "FR-072",
+          "FR-074",
+          "FR-001",
+          "FR-002",
+          "NFR-001"
+        ],
+        "epic": []
+      },
+      "requirementName": "Generador determinístico de Product Brief y PRD con requisitos numerados",
+      "scenarios": 2
+    },
+    {
+      "changeId": "e5s3-endpoint-api-projects-wizard-con-inicializacion",
+      "capability": "asistente-interactivo-multi-paso-de-creacion-de-proyecto-bri",
+      "bmad": {
+        "epic": 5,
+        "epicTitle": "Asistente Interactivo Multi-Paso de Creación de Proyecto (Brief + PRD Numerado)",
+        "story": "5.3",
+        "storyTitle": "Endpoint `/api/projects/wizard` con inicialización y conmutación automática"
+      },
+      "requirements": [
+        "FR-075"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-075"
+        ],
+        "epic": []
+      },
+      "requirementName": "Endpoint `/api/projects/wizard` con inicialización y conmutación automática",
+      "scenarios": 2
+    },
+    {
+      "changeId": "e6s1-terminal-drawer-interactivo-con-xterm-js-y-boton",
+      "capability": "consola-interactiva-xterm-js-para-pi-coding-agent-y-barra-de",
+      "bmad": {
+        "epic": 6,
+        "epicTitle": "Consola Interactiva Xterm.js para Pi Coding Agent y Barra de Sesiones",
+        "story": "6.1",
+        "storyTitle": "Terminal Drawer interactivo con Xterm.js y Botón Flotante (Zero-Scroll)"
+      },
+      "requirements": [
+        "FR-050",
+        "FR-052",
+        "FR-056"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-050",
+          "FR-052",
+          "FR-056"
+        ],
+        "epic": []
+      },
+      "requirementName": "Terminal Drawer interactivo con Xterm.js y Botón Flotante (Zero-Scroll)",
+      "scenarios": 3
+    },
+    {
+      "changeId": "e6s2-ejecucion-e-interaccion-bidireccional-con-pi-age",
+      "capability": "consola-interactiva-xterm-js-para-pi-coding-agent-y-barra-de",
+      "bmad": {
+        "epic": 6,
+        "epicTitle": "Consola Interactiva Xterm.js para Pi Coding Agent y Barra de Sesiones",
+        "story": "6.2",
+        "storyTitle": "Ejecución e Interacción Bidireccional con Pi Agent (`/usr/bin/pi`)"
+      },
+      "requirements": [
+        "FR-052",
+        "FR-060",
+        "FR-061"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-052",
+          "FR-060",
+          "FR-061"
+        ],
+        "epic": []
+      },
+      "requirementName": "Ejecución e Interacción Bidireccional con Pi Agent (`/usr/bin/pi`)",
+      "scenarios": 2
+    },
+    {
+      "changeId": "e6s3-barra-de-herramientas-y-selector-de-sesiones-pre",
+      "capability": "consola-interactiva-xterm-js-para-pi-coding-agent-y-barra-de",
+      "bmad": {
+        "epic": 6,
+        "epicTitle": "Consola Interactiva Xterm.js para Pi Coding Agent y Barra de Sesiones",
+        "story": "6.3",
+        "storyTitle": "Barra de Herramientas y Selector de Sesiones Previas"
+      },
+      "requirements": [
+        "FR-052",
+        "FR-053"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-052",
+          "FR-053"
+        ],
+        "epic": []
+      },
+      "requirementName": "Barra de Herramientas y Selector de Sesiones Previas",
+      "scenarios": 3
+    },
+    {
+      "changeId": "e7s1-comando-cli-un-specweaver-update",
+      "capability": "comando-y-flujo-de-actualizacion-un-specweaver-update",
+      "bmad": {
+        "epic": 7,
+        "epicTitle": "Comando y flujo de actualización (`un-specweaver update`)",
+        "story": "7.1",
+        "storyTitle": "Comando CLI `un-specweaver update`"
+      },
+      "requirements": [
+        "FR-080",
+        "FR-081"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-080",
+          "FR-081"
+        ],
+        "epic": []
+      },
+      "requirementName": "Comando CLI `un-specweaver update`",
+      "scenarios": 4
+    },
+    {
+      "changeId": "e7s2-accion-de-actualizacion-en-dashboard-y-streaming",
+      "capability": "comando-y-flujo-de-actualizacion-un-specweaver-update",
+      "bmad": {
+        "epic": 7,
+        "epicTitle": "Comando y flujo de actualización (`un-specweaver update`)",
+        "story": "7.2",
+        "storyTitle": "Acción de actualización en Dashboard y Streaming"
+      },
+      "requirements": [
+        "FR-082"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-082"
+        ],
+        "epic": []
+      },
+      "requirementName": "Acción de actualización en Dashboard y Streaming",
+      "scenarios": 1
+    },
+    {
+      "changeId": "e7s3-skill-y-flujo-guiado-sw-update",
+      "capability": "comando-y-flujo-de-actualizacion-un-specweaver-update",
+      "bmad": {
+        "epic": 7,
+        "epicTitle": "Comando y flujo de actualización (`un-specweaver update`)",
+        "story": "7.3",
+        "storyTitle": "Skill y flujo guiado `sw-update`"
+      },
+      "requirements": [
+        "FR-083"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-083"
+        ],
+        "epic": []
+      },
+      "requirementName": "Skill y flujo guiado `sw-update`",
+      "scenarios": 1
+    },
+    {
+      "changeId": "e8s1-infraestructura-frontend-moderna-react-vite-y-ar",
+      "capability": "reconstruccion-frontend-react-react-flow-e-interactividad-bi",
+      "bmad": {
+        "epic": 8,
+        "epicTitle": "Reconstrucción Frontend React + React Flow e Interactividad Bidireccional Software-to-Software",
+        "story": "8.1",
+        "storyTitle": "Infraestructura Frontend Moderna (React + Vite) y Arquitectura de Componentes"
+      },
+      "requirements": [
+        "FR-090"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-090"
+        ],
+        "epic": []
+      },
+      "requirementName": "Infraestructura Frontend Moderna (React + Vite) y Arquitectura de Componentes",
+      "scenarios": 4
+    },
+    {
+      "changeId": "e8s2-lienzo-interactivo-con-react-flow-xyflow-react-y",
+      "capability": "reconstruccion-frontend-react-react-flow-e-interactividad-bi",
+      "bmad": {
+        "epic": 8,
+        "epicTitle": "Reconstrucción Frontend React + React Flow e Interactividad Bidireccional Software-to-Software",
+        "story": "8.2",
+        "storyTitle": "Lienzo Interactivo con React Flow (`@xyflow/react`) y Nodos de Dominio"
+      },
+      "requirements": [
+        "FR-091"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-091"
+        ],
+        "epic": []
+      },
+      "requirementName": "Lienzo Interactivo con React Flow (`@xyflow/react`) y Nodos de Dominio",
+      "scenarios": 4
+    },
+    {
+      "changeId": "e8s3-motor-de-mutacion-bidireccional-visual-codigo-vi",
+      "capability": "reconstruccion-frontend-react-react-flow-e-interactividad-bi",
+      "bmad": {
+        "epic": 8,
+        "epicTitle": "Reconstrucción Frontend React + React Flow e Interactividad Bidireccional Software-to-Software",
+        "story": "8.3",
+        "storyTitle": "Motor de Mutación Bidireccional Visual ↔ Código (Visual-to-Code Sync)"
+      },
+      "requirements": [
+        "FR-092"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-092"
+        ],
+        "epic": []
+      },
+      "requirementName": "Motor de Mutación Bidireccional Visual ↔ Código (Visual-to-Code Sync)",
+      "scenarios": 4
+    },
+    {
+      "changeId": "e8s4-sincronizacion-en-tiempo-real-codigo-visual-medi",
+      "capability": "reconstruccion-frontend-react-react-flow-e-interactividad-bi",
+      "bmad": {
+        "epic": 8,
+        "epicTitle": "Reconstrucción Frontend React + React Flow e Interactividad Bidireccional Software-to-Software",
+        "story": "8.4",
+        "storyTitle": "Sincronización en Tiempo Real Código ↔ Visual mediante SSE"
+      },
+      "requirements": [
+        "FR-093"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-093"
+        ],
+        "epic": []
+      },
+      "requirementName": "Sincronización en Tiempo Real Código ↔ Visual mediante SSE",
+      "scenarios": 3
+    },
+    {
+      "changeId": "e8s5-panel-lateral-inspector-y-consola-terminal-react",
+      "capability": "reconstruccion-frontend-react-react-flow-e-interactividad-bi",
+      "bmad": {
+        "epic": 8,
+        "epicTitle": "Reconstrucción Frontend React + React Flow e Interactividad Bidireccional Software-to-Software",
+        "story": "8.5",
+        "storyTitle": "Panel Lateral Inspector y Consola Terminal Reactiva"
+      },
+      "requirements": [
+        "FR-094"
+      ],
+      "requirementsFrom": {
+        "story": [
+          "FR-094"
+        ],
+        "epic": []
+      },
+      "requirementName": "Panel Lateral Inspector y Consola Terminal Reactiva",
+      "scenarios": 3
     }
   ]
 }

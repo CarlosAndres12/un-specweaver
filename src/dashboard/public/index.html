@@ -2,98 +2,15 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Panel de Control — un-specweaver</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>un-specweaver — Centro de Control & Lienzo Interactivo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-lvuL2O5g.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DSepSP0G.css">
 </head>
-<body>
-  <header class="cabecera">
-    <h1>Panel de Control un-specweaver</h1>
-    <div class="estado-conexion" aria-live="polite">
-      <span id="pulso-estado" class="pulso pulse-green" aria-label="Conectado" title="Conectado"></span>
-      <span id="texto-conexion">Conectado</span>
-    </div>
-  </header>
-
-  <main>
-    <section id="barra-proyectos" aria-label="Proyectos">
-      <h2>Proyectos</h2>
-      <button id="boton-cambiar-proyecto" type="button" aria-label="Abrir selector rápido" title="Abrir selector rápido (Ctrl+P)">Cambiar proyecto</button>
-      <p id="proyecto-activo-etiqueta">Proyecto activo: <span id="proyecto-activo-nombre">—</span></p>
-    </section>
-
-    <section id="tablero-control" aria-label="Tablero de control">
-      <div id="sprint-actual">
-        <h3>Sprint actual</h3>
-        <p id="sprint-detalle">Cargando sprint...</p>
-      </div>
-
-      <div id="epicas-estado">
-        <h3>Épicas por estado</h3>
-        <div class="grupo-epicas" data-estado="pendiente">
-          <h4>Pendiente <span class="badge" id="badge-pendiente">0</span></h4>
-          <ul id="lista-pendiente" aria-label="Pendiente"></ul>
-        </div>
-        <div class="grupo-epicas" data-estado="en-progreso">
-          <h4>En Progreso <span class="badge" id="badge-en-progreso">0</span></h4>
-          <ul id="lista-en-progreso" aria-label="En Progreso"></ul>
-        </div>
-        <div class="grupo-epicas" data-estado="completada">
-          <h4>Completada <span class="badge" id="badge-completada">0</span></h4>
-          <ul id="lista-completada" aria-label="Completada"></ul>
-        </div>
-      </div>
-
-      <div id="salud-proyecto">
-        <h3>Salud del proyecto</h3>
-        <p id="salud-detalle">Verificando salud del proyecto...</p>
-      </div>
-
-      <div id="contenedor-diagrama" aria-label="Diagrama">
-        <h3>Diagrama</h3>
-        <div id="diagrama-contenido">Cargando diagrama...</div>
-      </div>
-    </section>
-
-    <div id="app" aria-live="polite"></div>
-  </main>
-
-  <!-- Terminal drawer colapsable — Story 4.2 -->
-  <div id="terminal-drawer" class="drawer colapsable" aria-label="Terminal" aria-hidden="true">
-    <div class="drawer-header">
-      <h3>Terminal</h3>
-      <div class="drawer-acciones">
-        <button type="button" data-command="sync" aria-label="Sincronizar">Sincronizar</button>
-        <button type="button" data-command="doctor" aria-label="Diagnóstico">Diagnóstico</button>
-        <button type="button" data-command="sprint" aria-label="Planificar Sprint">Planificar Sprint</button>
-        <button type="button" data-command="build" aria-label="Construir">Construir</button>
-        <button type="button" data-action="clear" aria-label="Limpiar historial">Limpiar</button>
-      </div>
-      <button type="button" class="drawer-cerrar" data-action="close" aria-label="Cerrar terminal" title="Cerrar (Esc)">×</button>
-    </div>
-    <div class="terminal-output" role="log" aria-live="polite"><pre class="terminal-pre" style="margin:0; white-space:pre-wrap; word-break:break-word;"></pre></div>
-    <div id="drawer-ayuda" class="drawer-ayuda oculto" role="dialog" aria-label="Ayuda de atajos">
-      <div class="ayuda-contenido">
-        <p><strong>Atajos de teclado</strong></p>
-        <ul>
-          <li><kbd>Ctrl</kbd> + <kbd>`</kbd> o <kbd>Cmd</kbd> + <kbd>J</kbd> — Abrir/cerrar terminal</li>
-          <li><kbd>Esc</kbd> — Cerrar terminal</li>
-          <li><kbd>?</kbd> — Mostrar esta ayuda</li>
-        </ul>
-        <button type="button" data-action="cerrar-ayuda">Cerrar ayuda</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Selector rápido — overlay modal -->
-  <div id="quick-switcher-overlay" class="oculto" role="dialog" aria-modal="true" aria-label="Selector rápido de proyectos">
-    <div class="quick-switcher-contenido">
-      <input id="quick-switcher-input" type="text" placeholder="Buscar proyecto..." aria-label="Buscar proyecto" autocomplete="off" />
-      <ul id="quick-switcher-lista" role="listbox" aria-label="Proyectos"></ul>
-      <p class="ayuda-atajos">Usa flechas ↑ ↓, Enter para seleccionar, Esc para cerrar — Atajo: Ctrl+P / Cmd+P</p>
-    </div>
-  </div>
-
-  <script type="module" src="./app.mjs"></script>
+<body class="theme-dark">
+  <div id="root"></div>
 </body>
 </html>

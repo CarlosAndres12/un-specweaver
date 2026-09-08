@@ -233,7 +233,10 @@ export function createArchifyVisor(container, options = {}) {
       const id = String(projectId || '').trim();
       if (!id) throw new Error('projectId requerido');
       const inicio = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-      const res = await fetch(`/api/projects/${encodeURIComponent(id)}/diagram`, fetchOpts);
+      const apiUrl = (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:')
+        ? `http://127.0.0.1:3100/api/projects/${encodeURIComponent(id)}/diagram`
+        : `/api/projects/${encodeURIComponent(id)}/diagram`;
+      const res = await fetch(apiUrl, fetchOpts);
       if (!res.ok) throw new Error(`Error al cargar diagrama: ${res.status}`);
       const markup = await res.text();
       const updated = renderArchify(container, markup, opts);

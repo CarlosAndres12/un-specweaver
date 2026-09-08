@@ -13,6 +13,7 @@ _bmad/
 .agents/skills/bmad-*/
 .agents/skills/openspec-*/
 .agents/skills/un-specweaver/
+.agents/skills/sw-*/
 .agents/skills/sdd-*/
 .agents/skills/rdd-*/
 .agents/skills/gentle-ai-*/
@@ -41,6 +42,7 @@ _bmad/
 .claude/skills/bmad-*/
 .claude/skills/openspec-*/
 .claude/skills/un-specweaver/
+.claude/skills/sw-*/
 .claude/skills/sdd-*/
 .claude/skills/rdd-*/
 .claude/skills/gentle-ai-*/
@@ -69,6 +71,7 @@ _bmad/
 .opencode/skills/bmad-*/
 .opencode/skills/openspec-*/
 .opencode/skills/un-specweaver/
+.opencode/skills/sw-*/
 .opencode/skills/sdd-*/
 .opencode/skills/rdd-*/
 .opencode/skills/gentle-ai-*/
@@ -86,6 +89,11 @@ _bmad/
 .opencode/skills/skill-registry/
 .opencode/skills/systemic-issue-triage/
 .opencode/skills/work-unit-commits/
+.agents/mcp/
+.agents/output-styles/
+.agents/agents/sdd-*.md
+.agents/agents/jd-*.md
+.agents/agents/review-*.md
 .claude/mcp/
 .claude/output-styles/
 .claude/agents/sdd-*.md
@@ -97,6 +105,12 @@ _bmad/
 .config/opencode/agents/jd-*.md
 .config/opencode/agents/review-*.md
 .config/opencode/
+.gemini/mcp/
+.gemini/output-styles/
+.gemini/agents/sdd-*.md
+.gemini/agents/jd-*.md
+.gemini/agents/review-*.md
+.gemini/
 .opencode/mcp/
 .opencode/output-styles/
 .opencode/agents/sdd-*.md

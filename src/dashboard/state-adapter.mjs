@@ -29,6 +29,7 @@ import { parseEpics } from '../../bridge/parse-epics.mjs';
 import { planSprint } from '../../bridge/plan-sprint.mjs';
 import { emitChange } from '../../bridge/emit-openspec.mjs';
 import { preflight, isGitRepo } from '../env.mjs';
+import { registerRecentWrite, computeHash } from './watcher.mjs';
 
 // ---------------------------------------------------------------------------
 // Helpers — candidatos de epics.md
@@ -284,23 +285,33 @@ export async function getDoctorState(projectPath) {
     const openspecExists = fs.existsSync(path.join(resolved, 'openspec')) || fs.existsSync(path.join(resolved, '.openspec'));
     checks.push({ name: 'openspec', ok: openspecExists, detail: openspecExists ? 'openspec present' : 'openspec missing' });
 
-    // epics file
+    // epics file (informativo; no bloquea salud del entorno)
     const epicsFile = findEpicsFile(resolved);
-    checks.push({ name: 'epics', ok: !!epicsFile, detail: epicsFile ? path.relative(resolved, epicsFile) : 'epics.md missing' });
+    checks.push({
+      name: 'epics',
+      ok: !!epicsFile,
+      fatal: false,
+      detail: epicsFile ? path.relative(resolved, epicsFile) : 'epics.md missing'
+    });
 
     // preflight checks (node, git bin, etc.) — preflight no depende de projectPath pero se reporta
     try {
       const pf = preflight('es');
       for (const c of pf.checks || []) {
         // Evitar duplicar git check con distinto nombre; preflight usa i18n nombre, lo normalizamos
-        checks.push({ name: String(c.name).toLowerCase().replace(/\s+/g, '_'), ok: !!c.ok, detail: c.detail || '' });
+        const isWarn = !c.ok && c.fatal === false;
+        checks.push({
+          name: String(c.name).toLowerCase().replace(/\s+/g, '_'),
+          ok: c.fatal === false ? true : !!c.ok,
+          warning: isWarn,
+          fatal: c.fatal !== false,
+          detail: c.detail || ''
+        });
       }
     } catch {}
 
-    // ok = true solo si los checks esenciales no fallan? Para health simple, ok si no hay checks fallidos fatales
-    // Tomamos ok = todos los checks de proyecto (git no fatal, specDir y epics opcionales en doctor)
-    // Para Story 1.3 no se exige criterio estricto, solo que retorne estructura sin 500
-    const ok = checks.every((c) => c.ok);
+    // ok = true si todos los checks no son fallos fatales
+    const ok = checks.every((c) => (c.fatal === false ? true : c.ok));
 
     return { ok, checks, projectPath: resolved };
   } catch (err) {
@@ -341,11 +352,24 @@ export async function getGitState(projectPath) {
 
   try {
     // Todas las invocaciones usan cwd: projectPath explicito, nunca cwd global
-    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd: resolved,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      encoding: 'utf8',
-    }).trim() || null;
+    let branch = null;
+    try {
+      branch = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], {
+        cwd: resolved,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        encoding: 'utf8',
+      }).trim() || null;
+    } catch {
+      try {
+        branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+          cwd: resolved,
+          stdio: ['ignore', 'pipe', 'ignore'],
+          encoding: 'utf8',
+        }).trim() || null;
+      } catch {
+        branch = null;
+      }
+    }
 
     const statusOut = execFileSync('git', ['status', '--porcelain'], {
       cwd: resolved,
@@ -515,6 +539,280 @@ export async function getConsolidatedState(projectIdOrPath) {
   ]);
 
   return { project, epics, sprint, git, doctor };
+}
+
+// ---------------------------------------------------------------------------
+// Graph Engine — Story 8.2 & 8.3 (React Flow Software-to-Software Bridge)
+// ---------------------------------------------------------------------------
+
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Retorna la estructura unificada de nodos y aristas lista para ser consumida por React Flow.
+ * Incluye datos de épicas, historias, olas calculadas y specs de OpenSpec.
+ * @param {string} projectPath
+ * @returns {Promise<object>} { nodes, edges, waves, source }
+ */
+export async function getGraphData(projectPath) {
+  const { resolved, valid } = resolveProjectPath(projectPath);
+  if (!valid || !resolved) {
+    return { nodes: [], edges: [], waves: [], error: 'invalid projectPath' };
+  }
+
+  const [epicsState, sprintState] = await Promise.all([
+    getEpicsState(resolved),
+    getSprintState(resolved),
+  ]);
+
+  const nodes = [];
+  const edges = [];
+  const waves = sprintState.waves || [];
+  const sprintNodesMap = new Map();
+  for (const n of sprintState.nodes || []) {
+    sprintNodesMap.set(String(n.story), n);
+  }
+
+  // Mapa de historia -> número de ola
+  const storyWaveMap = new Map();
+  waves.forEach((wave, waveIdx) => {
+    for (const item of wave) {
+      const sId = typeof item === 'object' ? String(item.story) : String(item);
+      storyWaveMap.set(sId, waveIdx + 1);
+    }
+  });
+
+  // Track coordinates per wave for initial clean layout
+  const waveCounters = new Map();
+
+  for (const story of epicsState.all || []) {
+    const sId = String(story.id);
+    const sprintInfo = sprintNodesMap.get(sId);
+    const waveNum = storyWaveMap.get(sId) || 1;
+
+    const rowIdx = waveCounters.get(waveNum) || 0;
+    waveCounters.set(waveNum, rowIdx + 1);
+
+    nodes.push({
+      id: sId,
+      type: 'storyNode',
+      position: {
+        x: (waveNum - 1) * 320 + 60,
+        y: rowIdx * 180 + 80,
+      },
+      data: {
+        id: sId,
+        storyId: sId,
+        epic: story.epic,
+        epicTitle: story.epicTitle,
+        title: story.title,
+        status: story.status || 'pendiente',
+        wave: waveNum,
+        requirements: story.requirements || [],
+        acceptanceCriteria: story.acceptanceCriteria || [],
+        dependsOn: sprintInfo ? sprintInfo.dependsOn : [],
+        capability: sprintInfo ? sprintInfo.capability : '',
+        changeId: sprintInfo ? sprintInfo.changeId : '',
+        raw: story.raw || '',
+      },
+    });
+
+    if (sprintInfo && Array.isArray(sprintInfo.dependsOn)) {
+      for (const dep of sprintInfo.dependsOn) {
+        edges.push({
+          id: `e-${dep}-${sId}`,
+          source: String(dep),
+          target: sId,
+          type: 'dependencyEdge',
+          animated: true,
+          data: {
+            label: 'dependsOn',
+          },
+        });
+      }
+    }
+  }
+
+  return {
+    nodes,
+    edges,
+    waves: waves.map((w, i) => ({
+      wave: i + 1,
+      stories: Array.isArray(w) ? w.map((item) => (typeof item === 'object' ? String(item.story) : String(item))) : [],
+    })),
+    source: epicsState.source,
+  };
+}
+
+/**
+ * Modifica o elimina una arista de dependencia en epics.md de forma atómica y con supresión de eco.
+ * Detecta ciclos para prevenir dependencias circulares.
+ * @param {string} projectPath
+ * @param {object} param1 - { source, target, action }
+ * @returns {Promise<object>}
+ */
+export async function updateGraphEdge(projectPath, { source, target, action = 'add' }) {
+  const { resolved, valid } = resolveProjectPath(projectPath);
+  if (!valid || !resolved) {
+    return { ok: false, error: 'invalid projectPath' };
+  }
+
+  const epicsFile = findEpicsFile(resolved);
+  if (!epicsFile) {
+    return { ok: false, error: 'epics.md not found' };
+  }
+
+  const sSource = String(source).trim();
+  const sTarget = String(target).trim();
+  if (!sSource || !sTarget) {
+    return { ok: false, error: 'source and target required' };
+  }
+
+  if (sSource === sTarget) {
+    return { ok: false, error: 'CIRCULAR_DEPENDENCY' };
+  }
+
+  // Comprobar ciclos si es 'add'
+  if (action === 'add') {
+    const sprint = await getSprintState(resolved);
+    const graphMap = new Map();
+    for (const n of sprint.nodes || []) {
+      graphMap.set(String(n.story), (n.dependsOn || []).map(String));
+    }
+    // Si target ya es ancestro de source (source depende de target transitivamente),
+    // agregar target -> dependsOn -> source crearia un ciclo.
+    const visited = new Set();
+    const queue = [sSource];
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (curr === sTarget) {
+        return { ok: false, error: 'CIRCULAR_DEPENDENCY' };
+      }
+      if (!visited.has(curr)) {
+        visited.add(curr);
+        const deps = graphMap.get(curr) || [];
+        for (const d of deps) {
+          if (!visited.has(d)) queue.push(d);
+        }
+      }
+    }
+  }
+
+  const content = await fs.promises.readFile(epicsFile, 'utf8');
+
+  // Buscar bloque de la historia target
+  const storyRegex = new RegExp(
+    '(###\\s+Story\\s+' + escapeRegex(sTarget) + '\\s*:[^\\n]*\\n)([\\s\\S]*?)(?=\\n###\\s+Story|\\n##\\s+Epic|$)',
+    'i'
+  );
+  const match = content.match(storyRegex);
+  if (!match) {
+    return { ok: false, error: `Story ${sTarget} not found in ${epicsFile}` };
+  }
+
+  const header = match[1];
+  let body = match[2];
+
+  if (action === 'add') {
+    // Verificar si ya existe 'Depende de:'
+    const depLineRegex = /(\*\*Depende de:\*\*\s*)([^\n]*)/i;
+    if (depLineRegex.test(body)) {
+      body = body.replace(depLineRegex, (m, prefix, rest) => {
+        if (new RegExp('\\b(?:Story\\s+)?' + escapeRegex(sSource) + '\\b', 'i').test(rest)) {
+          return m; // ya existe
+        }
+        const cleanRest = rest.trim();
+        const sep = cleanRest ? ', ' : '';
+        return `${prefix}${cleanRest}${sep}Story ${sSource}`;
+      });
+    } else {
+      // Insertar linea de dependencia antes de Description o Acceptance Criteria
+      const insertMarker = /(\*\*Description:\*\*|\*\*FRs:\*\*|\*\*Acceptance Criteria:\*\*)/i;
+      if (insertMarker.test(body)) {
+        body = body.replace(insertMarker, `**Depende de:** Story ${sSource}\n\n$1`);
+      } else {
+        body = `**Depende de:** Story ${sSource}\n\n` + body;
+      }
+    }
+  } else if (action === 'remove') {
+    const depLineRegex = /(\*\*Depende de:\*\*\s*)([^\n]*)/i;
+    if (depLineRegex.test(body)) {
+      body = body.replace(depLineRegex, (m, prefix, rest) => {
+        let updated = rest
+          .replace(new RegExp('(?:,\\s*)?\\b(?:Story\\s+)?' + escapeRegex(sSource) + '\\b(?:\\s*,)?', 'gi'), '')
+          .replace(/^,\s*|,\s*$/g, '')
+          .trim();
+        if (!updated) {
+          return '';
+        }
+        return `${prefix}${updated}`;
+      });
+      body = body.replace(/\n\n\n+/g, '\n\n');
+    }
+  }
+
+  const updatedContent = content.replace(storyRegex, header + body);
+
+  // Persistir con supresion de eco
+  const hash = computeHash(updatedContent);
+  registerRecentWrite(epicsFile, hash);
+  await pm.writeAtomic(epicsFile, updatedContent);
+
+  return { ok: true, source: sSource, target: sTarget, action };
+}
+
+/**
+ * Actualiza propiedades de una historia en epics.md.
+ * @param {string} projectPath
+ * @param {object} param1 - { storyId, title, criteria, status }
+ * @returns {Promise<object>}
+ */
+export async function updateStory(projectPath, { storyId, title, criteria, status }) {
+  const { resolved, valid } = resolveProjectPath(projectPath);
+  if (!valid || !resolved) {
+    return { ok: false, error: 'invalid projectPath' };
+  }
+
+  const epicsFile = findEpicsFile(resolved);
+  if (!epicsFile) {
+    return { ok: false, error: 'epics.md not found' };
+  }
+
+  const sId = String(storyId).trim();
+  const content = await fs.promises.readFile(epicsFile, 'utf8');
+
+  const storyRegex = new RegExp(
+    '(###\\s+Story\\s+' + escapeRegex(sId) + '\\s*:[^\\n]*\\n)([\\s\\S]*?)(?=\\n###\\s+Story|\\n##\\s+Epic|$)',
+    'i'
+  );
+  const match = content.match(storyRegex);
+  if (!match) {
+    return { ok: false, error: `Story ${sId} not found in ${epicsFile}` };
+  }
+
+  let header = match[1];
+  let body = match[2];
+
+  if (title) {
+    header = `### Story ${sId}: ${title.trim()}\n`;
+  }
+
+  if (criteria && Array.isArray(criteria)) {
+    const acText = criteria.map((c) => `- **Given** ${c.given}\n  **When** ${c.when}\n  **Then** ${c.then}`).join('\n\n');
+    const acRegex = /(\*\*Acceptance Criteria:\*\*\s*\n)([\s\S]*?)(?=\n\*\*Notas técnicas:\*\*|\n\*\*Depende de:\*\*|$)/i;
+    if (acRegex.test(body)) {
+      body = body.replace(acRegex, `$1\n${acText}\n\n`);
+    }
+  }
+
+  const updatedContent = content.replace(storyRegex, header + body);
+
+  const hash = computeHash(updatedContent);
+  registerRecentWrite(epicsFile, hash);
+  await pm.writeAtomic(epicsFile, updatedContent);
+
+  return { ok: true, storyId: sId, title, status };
 }
 
 // No chdir en este archivo — AD-01

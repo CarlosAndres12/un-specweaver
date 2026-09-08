@@ -7,6 +7,12 @@
     "node": ">=20.11"
   },
   "scripts": {
+    "start": "./start.sh",
+    "dev": "./start.sh",
+    "dashboard": "node bin/un-specweaver.mjs dashboard",
+    "ui": "node bin/un-specweaver.mjs ui",
+    "build:ui": "vite build --config src/dashboard/frontend/vite.config.mjs",
+    "dev:ui": "vite --config src/dashboard/frontend/vite.config.mjs",
     "test": "node --test \"test/*.mjs\"",
     "bridge": "node bridge/cli.mjs",
     "un-specweaver": "node bin/un-specweaver.mjs",
@@ -44,5 +50,17 @@
   "bugs": {
     "url": "https://github.com/deathperminut/un-specweaver/issues"
   },
-  "homepage": "https://github.com/deathperminut/un-specweaver#readme"
+  "homepage": "https://github.com/deathperminut/un-specweaver#readme",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "^12.11.6",
+    "lucide-react": "^1.41.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.2.2"
+  }
 }

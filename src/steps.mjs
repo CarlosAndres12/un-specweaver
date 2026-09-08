@@ -31,9 +31,20 @@ const yamlStr = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
 // name/description/allowed-tools; OpenCode usa .opencode/commands/<ns>-<n>.md -> /ns-n
 // con solo description.
 export function renderCommand(style, meta, body) {
-  // El cuerpo es unico para los dos agentes, pero las referencias cruzadas entre comandos
+  // El cuerpo es unico para los agentes, pero las referencias cruzadas entre comandos
   // tienen que usar la sintaxis del agente donde se leen: /sw:change en Claude, /sw-change
-  // en OpenCode. Sin esto el comando le dice al usuario que invoque algo que no existe ahi.
+  // en OpenCode, sw-change en Antigravity (skills).
+  if (style === 'skill') {
+    body = body.replace(new RegExp(`/${NAMESPACE}:([a-z][a-z0-9-]*)`, 'g'), `${NAMESPACE}-$1`);
+    const lines = [
+      '---',
+      `name: ${NAMESPACE}-${meta.name || meta.title}`,
+      `description: ${yamlStr(meta.description || meta.title || '')}`,
+      '---',
+      '',
+    ];
+    return lines.join('\n') + body;
+  }
   if (style !== 'namespaced') {
     body = body.replace(new RegExp(`/${NAMESPACE}:([a-z][a-z0-9-]*)`, 'g'), `/${NAMESPACE}-$1`);
   }
@@ -47,6 +58,9 @@ export function renderCommand(style, meta, body) {
 }
 
 export function commandPath(agent, name) {
+  if (agent.commandStyle === 'skill') {
+    return path.join(agent.skills, `${NAMESPACE}-${name}`, 'SKILL.md');
+  }
   return agent.commandStyle === 'namespaced'
     ? path.join(agent.commands, NAMESPACE, `${name}.md`)
     : path.join(agent.commands, `${NAMESPACE}-${name}.md`);
@@ -72,7 +86,7 @@ const skillDirs   = (agents) => [...new Set(agents.map((a) => a.skills))];
 // visibles en OpenCode porque la poda solo miraba .opencode/commands.
 const agentHomes = (agents) => [...new Set(agents.map((a) => a.home).filter(Boolean))];
 const commandDirs = (agents) => [...new Set([
-  ...agents.map((a) => a.commands).filter(Boolean),
+  ...agents.filter((a) => a.commandStyle !== 'skill').map((a) => a.commands).filter(Boolean),
   ...agentHomes(agents).map((h) => path.join(h, 'commands')),
 ])];
 
@@ -98,7 +112,7 @@ export function gitignoreBlock(_agentsIgnored) {
   const dirs = [...new Set([...agents.flatMap((a) => [a.skills, a.commands].filter(Boolean)), ...siblings])].sort();
   for (const d of dirs) {
     if (d.endsWith('skills')) {
-      lines.push(`${d}/bmad-*/`, `${d}/openspec-*/`, `${d}/un-specweaver/`);
+      lines.push(`${d}/bmad-*/`, `${d}/openspec-*/`, `${d}/un-specweaver/`, `${d}/${NAMESPACE}-*/`);
       // Gentle-AI instala ~25 skills mas. Se enumeran porque no comparten un prefijo unico
       // y porque ignorar `${d}/` entero escondería las skills propias del usuario.
       for (const pre of VENDORS.gentle.skillPrefixes) lines.push(`${d}/${pre}*/`);
@@ -127,6 +141,19 @@ export function gitignoreBlock(_agentsIgnored) {
 
   lines.push('', `# Al repo SI van: openspec/, _bmad-output/, docs/, .un-specweaver/, ${VENDORS.gentle.keepTracked.join(', ')}`, GITIGNORE_END);
   return lines.join('\n') + '\n';
+}
+
+function hasGentleConfig(root, agents) {
+  const marker = VENDORS.gentle.doneMarker;
+  return agents.some((a) => {
+    const candidates = [
+      a.skills,
+      a.home ? path.join(a.home, 'skills') : null,
+      a.home ? path.join(a.home, 'antigravity-cli', 'skills') : null,
+      a.commands && a.commandStyle !== 'skill' ? path.join(path.dirname(a.commands), 'skills') : null,
+    ].filter(Boolean);
+    return candidates.some((dir) => fs.existsSync(path.join(root, dir, marker)));
+  });
 }
 
 export const STEPS = [
@@ -264,7 +291,7 @@ export const STEPS = [
       if (!which(VENDORS.gentle.bin)) return { state: 'pending', detail: t(ctx.lang, 'step.gentle-config.after') };
       // gentle-ai 2.4 ya no crea .atl/. La evidencia de que corrio es que el SDD quedo
       // instalado en el dir de skills del agente.
-      const done = ctx.agents.some((a) => fs.existsSync(path.join(ctx.root, a.skills, VENDORS.gentle.doneMarker)));
+      const done = hasGentleConfig(ctx.root, ctx.agents);
       return done
         ? { state: 'ok', detail: t(ctx.lang, 'step.gentle-config.ok') }
         : { state: 'pending', detail: t(ctx.lang, 'step.gentle-config.pending', ctx.agents.map((a) => a.id).join(', ')) };
@@ -379,7 +406,9 @@ export const STEPS = [
       for (const agent of ctx.agents.filter((a) => a.commands)) {
         for (const name of names) {
           const { meta, body } = splitFrontmatter(readAsset(`commands/${lang}/${name}.md`));
-          const invocation = agent.commandStyle === 'namespaced' ? `/${NAMESPACE}:${name}` : `/${NAMESPACE}-${name}`;
+          const invocation = agent.commandStyle === 'namespaced'
+            ? `/${NAMESPACE}:${name}`
+            : (agent.commandStyle === 'skill' ? `${NAMESPACE}-${name}` : `/${NAMESPACE}-${name}`);
           out.push({
             file: path.join(ctx.root, commandPath(agent, name)),
             content: renderCommand(agent.commandStyle, meta, body),

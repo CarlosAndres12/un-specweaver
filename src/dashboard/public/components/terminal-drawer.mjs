@@ -213,10 +213,12 @@ function ensureDrawerStructure(container) {
   acciones.className = 'drawer-acciones';
 
   const btnDefs = [
-    { command: 'sync', label: 'Sincronizar', title: 'Sincronizar (sync)' },
-    { command: 'doctor', label: 'Diagnóstico', title: 'Diagnóstico (doctor)' },
-    { command: 'sprint', label: 'Planificar Sprint', title: 'Planificar Sprint (sprint)' },
-    { command: 'build', label: 'Construir', title: 'Construir (build)' },
+    { command: 'pi', label: '🤖 pi', title: 'Iniciar agente Pi en este proyecto (pi)' },
+    { command: 'opencode', label: '⚡ opencode', title: 'Iniciar OpenCode (opencode)' },
+    { command: 'build', label: '🔨 build', title: 'Construir / Validar (build)' },
+    { command: 'sprint', label: '📊 sprint', title: 'Planificar Sprint (sprint)' },
+    { command: 'sync', label: '🔄 sync', title: 'Sincronizar (sync)' },
+    { command: 'doctor', label: '🩺 doctor', title: 'Diagnóstico (doctor)' },
   ];
   for (const d of btnDefs) {
     const b = document.createElement('button');
@@ -248,8 +250,6 @@ function ensureDrawerStructure(container) {
 
   const output = document.createElement('div');
   output.className = 'terminal-output';
-  // Usar <pre> semantics? Usaremos div con white-space pre-wrap via CSS, pero también puede ser <pre>
-  // Para meet spec "<pre> + spans", creamos <pre> dentro
   const pre = document.createElement('pre');
   pre.className = 'terminal-pre';
   pre.setAttribute('aria-live', 'polite');
@@ -257,6 +257,14 @@ function ensureDrawerStructure(container) {
   pre.style.whiteSpace = 'pre-wrap';
   pre.style.wordBreak = 'break-word';
   output.appendChild(pre);
+
+  const inputBar = document.createElement('form');
+  inputBar.className = 'drawer-input-bar';
+  inputBar.innerHTML = `
+    <span class="drawer-prompt" aria-hidden="true">$</span>
+    <input type="text" class="drawer-cmd-input" placeholder="Escribe comando (pi, opencode, /sw:build, doctor...) o responde..." autocomplete="off" />
+    <button type="submit" class="drawer-cmd-send" title="Enviar comando o input">↵</button>
+  `;
 
   const ayuda = document.createElement('div');
   ayuda.id = 'drawer-ayuda';
@@ -280,32 +288,24 @@ function ensureDrawerStructure(container) {
   // Limpiar contenido previo? Solo si no parece drawer ya
   const hasDrawerClass = container.classList && container.classList.contains('drawer');
   if (!hasDrawerClass || !outputEl) {
-    // No vaciar si container ya tiene elementos relevantes? Simplificar: append si no existe
-    // Si container.innerHTML es vacío o solo whitespace, construir desde cero
     const isEmpty = !container.innerHTML || container.innerHTML.trim() === '' || container.children.length === 0;
     if (isEmpty) {
       container.innerHTML = '';
       container.appendChild(header);
       container.appendChild(output);
+      container.appendChild(inputBar);
       container.appendChild(ayuda);
     } else {
-      // Intentar no duplicar: solo añadir lo faltante
       if (!container.querySelector('.drawer-header')) container.appendChild(header);
       if (!container.querySelector('.terminal-output')) container.appendChild(output);
+      if (!container.querySelector('.drawer-input-bar')) container.appendChild(inputBar);
       if (!container.querySelector('#drawer-ayuda')) container.appendChild(ayuda);
-      // Re-buscar pre
       const existingPre = container.querySelector('.terminal-pre') || container.querySelector('.terminal-output');
       if (existingPre) {
-        // asegurar outputEl referencia correcta
-        if (existingPre.classList && existingPre.classList.contains('terminal-pre')) {
-          outputEl = existingPre;
-        } else {
-          outputEl = existingPre;
-        }
+        outputEl = existingPre;
       } else {
         outputEl = pre;
       }
-      // si ya creamos output pero no está en DOM, ya lo añadimos
       return { outputEl: container.querySelector('.terminal-pre') || pre };
     }
     outputEl = pre;
@@ -314,18 +314,142 @@ function ensureDrawerStructure(container) {
   return { outputEl };
 }
 
-/* -------------------- streaming -------------------- */
-async function ejecutarComandoFetch(projectId, command, outputEl, fetchFn) {
+/* -------------------- streaming & input -------------------- */
+function getApiUrl(urlPath) {
+  if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+    return `http://127.0.0.1:3100${urlPath}`;
+  }
+  return urlPath;
+}
+
+let activeExecutionId = null;
+let activeXterm = null;
+let activeFitAddon = null;
+const sesionesMap = new Map(); // execId -> { id, command, args, startedAt, status, pid }
+
+export function actualizarToolbarSesiones(selectedId) {
+  if (typeof document === 'undefined') return;
+  const selectEl = document.getElementById('select-sesiones-terminal');
+  const badgeEstado = document.getElementById('terminal-badge-estado');
+  const fabBadge = document.getElementById('badge-fab-activo');
+
+  if (selectEl) {
+    selectEl.innerHTML = '';
+    if (sesionesMap.size === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '(Sin sesión activa)';
+      selectEl.appendChild(opt);
+    } else {
+      for (const [id, s] of sesionesMap.entries()) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        const isSel = id === (selectedId || activeExecutionId);
+        opt.textContent = `${s.command}${s.args && s.args.length ? ' ' + s.args.join(' ') : ''} (${s.startedAt}) ${isSel ? '● Activa' : ''}`;
+        if (isSel) opt.selected = true;
+        selectEl.appendChild(opt);
+      }
+    }
+  }
+
+  if (badgeEstado) {
+    if (activeExecutionId) {
+      const s = sesionesMap.get(activeExecutionId);
+      badgeEstado.textContent = `Ejecutando: ${s?.command || 'proceso'}`;
+      badgeEstado.className = 'terminal-badge-tag activo';
+    } else {
+      badgeEstado.textContent = 'Inactivo';
+      badgeEstado.className = 'terminal-badge-tag inactivo';
+    }
+  }
+
+  if (fabBadge) {
+    if (activeExecutionId) fabBadge.classList.remove('oculto');
+    else fabBadge.classList.add('oculto');
+  }
+}
+
+export async function initXterm(containerEl) {
+  if (activeXterm) return activeXterm;
+  const wrap = containerEl ? (containerEl.querySelector('#xterm-container') || containerEl.querySelector('.xterm-canvas-contenedor')) : null;
+  if (!wrap || typeof window === 'undefined') return null;
+  try {
+    const { Terminal } = await import('../vendor/xterm/xterm.mjs');
+    const { FitAddon } = await import('../vendor/xterm/addon-fit.mjs');
+    activeXterm = new Terminal({
+      theme: {
+        background: '#0c1017',
+        foreground: '#f8fafc',
+        cursor: '#38bdf8',
+        cursorAccent: '#0c1017',
+        selectionBackground: 'rgba(56, 189, 248, 0.3)',
+        black: '#1e293b',
+        red: '#f43f5e',
+        green: '#10b981',
+        yellow: '#fbbf24',
+        blue: '#38bdf8',
+        magenta: '#c084fc',
+        cyan: '#22d3ee',
+        white: '#f8fafc',
+      },
+      cursorBlink: true,
+      fontSize: 13,
+      lineHeight: 1.25,
+      fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+      convertEol: true,
+    });
+    activeFitAddon = new FitAddon();
+    activeXterm.loadAddon(activeFitAddon);
+    activeXterm.open(wrap);
+    try { activeFitAddon.fit(); } catch {}
+
+    activeXterm.onData((data) => {
+      if (activeExecutionId) {
+        const s = sesionesMap.get(activeExecutionId);
+        const pid = s?.pid || (typeof window !== 'undefined' && window.__lastActiveProjectId) || '';
+        if (pid) {
+          enviarInputFetch(pid, activeExecutionId, data, null);
+        }
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      try { activeFitAddon?.fit(); } catch {}
+    });
+
+    return activeXterm;
+  } catch (err) {
+    console.warn('[terminal-drawer] xterm no cargado, usando fallback:', err);
+    return null;
+  }
+}
+
+async function enviarInputFetch(projectId, executionId, input, fetchFn) {
+  const pid = String(projectId);
+  const execId = String(executionId);
+  const urlPost = getApiUrl(`/api/projects/${encodeURIComponent(pid)}/commands/${encodeURIComponent(execId)}/input`);
+  const fetcher = fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!fetcher) return;
+  try {
+    await fetcher(urlPost, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input }),
+    });
+  } catch {}
+}
+
+async function ejecutarComandoFetch(projectId, command, outputEl, fetchFn, args = []) {
   const pid = String(projectId);
   const cmd = String(command);
   // POST /api/projects/:id/commands
-  const urlPost = `/api/projects/${encodeURIComponent(pid)}/commands`;
+  const urlPost = getApiUrl(`/api/projects/${encodeURIComponent(pid)}/commands`);
   const fetcher = fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
   if (!fetcher) throw new Error('fetch no disponible');
   const res = await fetcher(urlPost, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command: cmd }),
+    body: JSON.stringify({ command: cmd, args: Array.isArray(args) ? args : [] }),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
@@ -335,20 +459,43 @@ async function ejecutarComandoFetch(projectId, command, outputEl, fetchFn) {
   const executionId = data.executionId || data.id || data.execId;
   if (!executionId) throw new Error('Sin executionId en respuesta POST');
 
+  activeExecutionId = executionId;
+  const sessionRecord = {
+    id: executionId,
+    command: cmd,
+    args: Array.isArray(args) ? args : [],
+    pid,
+    startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    status: 'running',
+  };
+  sesionesMap.set(executionId, sessionRecord);
+  actualizarToolbarSesiones(executionId);
+
   // Mostrar comando en historial
-  const promptLine = `$ ${cmd}\n`;
+  const promptLine = `$ ${cmd}${args && args.length > 0 ? ' ' + args.join(' ') : ''}\n`;
   pushHistory(pid, promptLine, 'system');
   appendOutput(outputEl, promptLine, 'system');
+  if (activeXterm) {
+    activeXterm.write(`\r\n\x1b[1;36m$ ${cmd}${args && args.length > 0 ? ' ' + args.join(' ') : ''}\x1b[0m\r\n`);
+  }
 
   // Suscribir a stream
-  await suscribirStream(pid, executionId, outputEl, fetcher);
+  try {
+    await suscribirStream(pid, executionId, outputEl, fetcher, cmd);
+  } finally {
+    if (activeExecutionId === executionId) {
+      activeExecutionId = null;
+    }
+    if (sessionRecord) sessionRecord.status = 'closed';
+    actualizarToolbarSesiones();
+  }
   return executionId;
 }
 
-async function suscribirStream(projectId, executionId, outputEl, fetchFn) {
+async function suscribirStream(projectId, executionId, outputEl, fetchFn, command = '') {
   const pid = String(projectId);
   const execId = String(executionId);
-  const url = `/api/projects/${encodeURIComponent(pid)}/commands/${encodeURIComponent(execId)}/stream`;
+  const url = getApiUrl(`/api/projects/${encodeURIComponent(pid)}/commands/${encodeURIComponent(execId)}/stream`);
   const fetcher = fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
 
   // Preferir EventSource si disponible y no es mock fetch-only env
@@ -372,16 +519,21 @@ async function suscribirStream(projectId, executionId, outputEl, fetchFn) {
             const stream = d.stream || 'stdout';
             pushHistory(pid, chunk, stream);
             appendOutput(outputEl, chunk, stream);
+            if (activeXterm) {
+              activeXterm.write(chunk.replace(/\r?\n/g, '\r\n'));
+            }
           } catch {}
         });
         es.addEventListener('COMMAND_CLOSE', (event) => {
           try {
             const d = JSON.parse(event.data || '{}');
-            // Opcional: mostrar exitCode
             if (typeof d.exitCode !== 'undefined') {
               const line = `\n[proceso terminado con código ${d.exitCode}]\n`;
               pushHistory(pid, line, 'system');
               appendOutput(outputEl, line, 'system');
+              if (activeXterm) {
+                activeXterm.write(`\r\n\x1b[1;32m[proceso terminado con código ${d.exitCode}]\x1b[0m\r\n`);
+              }
             }
           } catch {}
           finished = true;
@@ -400,13 +552,16 @@ async function suscribirStream(projectId, executionId, outputEl, fetchFn) {
             }, 500);
           }
         };
-        // Timeout de seguridad: si no cierra en 30s, resolver igual
-        setTimeout(() => {
-          if (!finished) {
-            cleanup();
-            resolve();
-          }
-        }, 30000);
+        // Timeout de seguridad: solo para comandos no interactivos (pi/opencode no tienen timeout)
+        const isInteractive = ['pi', 'opencode', 'sh', 'bash', 'shell'].includes(String(command).toLowerCase());
+        if (!isInteractive) {
+          setTimeout(() => {
+            if (!finished) {
+              cleanup();
+              resolve();
+            }
+          }, 30000);
+        }
       });
     } catch {
       // fallback
@@ -462,6 +617,9 @@ async function suscribirStreamFetch(projectId, executionId, outputEl, fetchFn) {
               const stream = parsed.stream || 'stdout';
               pushHistory(pid, chunk, stream);
               appendOutput(outputEl, chunk, stream);
+              if (activeXterm) {
+                activeXterm.write(chunk.replace(/\r?\n/g, '\r\n'));
+              }
             } catch {}
           } else if (event === 'COMMAND_CLOSE') {
             try {
@@ -470,6 +628,9 @@ async function suscribirStreamFetch(projectId, executionId, outputEl, fetchFn) {
                 const line = `\n[proceso terminado con código ${parsed.exitCode}]\n`;
                 pushHistory(pid, line, 'system');
                 appendOutput(outputEl, line, 'system');
+                if (activeXterm) {
+                  activeXterm.write(`\r\n\x1b[1;32m[proceso terminado con código ${parsed.exitCode}]\x1b[0m\r\n`);
+                }
               }
             } catch {}
             try { await reader.cancel(); } catch {}
@@ -493,8 +654,13 @@ async function suscribirStreamFetch(projectId, executionId, outputEl, fetchFn) {
         if (event === 'COMMAND_OUTPUT' && data) {
           try {
             const parsed = JSON.parse(data);
-            pushHistory(pid, parsed.chunk || '', parsed.stream || 'stdout');
-            appendOutput(outputEl, parsed.chunk || '', parsed.stream || 'stdout');
+            const chunk = parsed.chunk || '';
+            const stream = parsed.stream || 'stdout';
+            pushHistory(pid, chunk, stream);
+            appendOutput(outputEl, chunk, stream);
+            if (activeXterm) {
+              activeXterm.write(chunk.replace(/\r?\n/g, '\r\n'));
+            }
           } catch {}
         } else if (event === 'COMMAND_CLOSE' && data) {
           try {
@@ -502,6 +668,9 @@ async function suscribirStreamFetch(projectId, executionId, outputEl, fetchFn) {
             const line = `\n[proceso terminado con código ${parsed.exitCode}]\n`;
             pushHistory(pid, line, 'system');
             appendOutput(outputEl, line, 'system');
+            if (activeXterm) {
+              activeXterm.write(`\r\n\x1b[1;32m[proceso terminado con código ${parsed.exitCode}]\x1b[0m\r\n`);
+            }
           } catch {}
         }
       }
@@ -552,6 +721,7 @@ export function createTerminalDrawer(container, options = {}) {
   const fetchFn = options.fetch || (typeof fetch !== 'undefined' ? fetch : null);
   const getProjectId = typeof options.getProjectId === 'function' ? options.getProjectId : () => options.projectId || null;
   let currentProjectId = options.projectId || getProjectId() || null;
+  const usePiAgent = !!options.usePiAgent;
 
   // Asegurar estructura interna
   let outputEl = null;
@@ -624,10 +794,15 @@ export function createTerminalDrawer(container, options = {}) {
     if (drawerEl.classList) {
       drawerEl.classList.add('abierto');
       drawerEl.classList.remove('colapsado');
-      // también soportar .open por si tests chequean
       drawerEl.setAttribute && drawerEl.setAttribute('aria-hidden', 'false');
     }
     drawerEl.dataset && (drawerEl.dataset.open = 'true');
+    initXterm(drawerEl).then(() => {
+      try {
+        activeFitAddon?.fit();
+        activeXterm?.focus();
+      } catch {}
+    });
   }
 
   function cerrar() {
@@ -723,15 +898,18 @@ export function createTerminalDrawer(container, options = {}) {
   const mostrar = abrir;
   const ocultar = cerrar;
 
-  async function ejecutar(command, explicitProjectId) {
+  async function ejecutar(command, explicitProjectId, args = []) {
     const pid = explicitProjectId ? String(explicitProjectId) : (String(getProjectId() || currentProjectId || ''));
     if (!pid) throw new Error('projectId requerido para ejecutar comando');
     // Asegurar que currentProjectId actualizado
     currentProjectId = pid;
-    // Si drawer cerrado, abrir automáticamente? No, mantener cerrado pero igual historial
+    // Si drawer cerrado, abrir automáticamente para que el usuario vea la ejecución
+    if (!estaAbierto()) {
+      try { abrir(); } catch {}
+    }
     // Ejecutar via fetch
     const fetcher = fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
-    return ejecutarComandoFetch(pid, command, targetEl, fetcher);
+    return ejecutarComandoFetch(pid, command, targetEl, fetcher, args);
   }
 
   // Handler de botones
@@ -747,9 +925,20 @@ export function createTerminalDrawer(container, options = {}) {
         appendOutput(targetEl, '\n[error] No hay proyecto activo\n', 'stderr');
         return;
       }
-      ejecutar(cmd, pid).catch((err) => {
+      let execCmd = cmd;
+      let execArgs = [];
+      const swCommands = ['doctor', 'sprint', 'sync', 'build', 'ticket', 'adopt', 'bug', 'change', 'new'];
+      if (usePiAgent && swCommands.includes(cmd)) {
+        execCmd = 'pi';
+        execArgs = [`/sw:${cmd}`];
+      }
+      ejecutar(execCmd, pid, execArgs).catch((err) => {
         appendOutput(targetEl, `\n[error] ${err.message}\n`, 'stderr');
       });
+    } else if (action === 'maximize') {
+      e.preventDefault();
+      drawerEl.classList.toggle('maximizado');
+      try { activeFitAddon?.fit(); } catch {}
     } else if (action === 'clear') {
       e.preventDefault();
       const pid = String(getProjectId() || currentProjectId || '');
@@ -757,12 +946,15 @@ export function createTerminalDrawer(container, options = {}) {
         clear(pid);
         if (targetEl) {
           targetEl.innerHTML = '';
-          if (targetEl.children) targetEl.children = [];
           while (targetEl.firstChild) targetEl.removeChild(targetEl.firstChild);
+          if (Array.isArray(targetEl._children)) targetEl._children = [];
         }
       } else {
         clear();
         if (targetEl) targetEl.innerHTML = '';
+      }
+      if (activeXterm) {
+        try { activeXterm.clear(); } catch {}
       }
     } else if (action === 'close') {
       e.preventDefault();
@@ -773,12 +965,72 @@ export function createTerminalDrawer(container, options = {}) {
     }
   }
 
+  // Input bar handler
+  const cmdHistory = [];
+  let historyIdx = -1;
+
+  function onSubmitInput(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const inputEl = drawerEl ? drawerEl.querySelector('.drawer-cmd-input') : null;
+    if (!inputEl) return;
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    const pid = String(getProjectId() || currentProjectId || '');
+    if (!pid) {
+      appendOutput(targetEl, '\n[error] No hay proyecto activo\n', 'stderr');
+      return;
+    }
+    if (activeExecutionId) {
+      appendOutput(targetEl, text + '\n', 'stdout');
+      const fetcher = fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+      enviarInputFetch(pid, activeExecutionId, text + '\n', fetcher);
+    } else {
+      cmdHistory.push(text);
+      historyIdx = cmdHistory.length;
+      let cleanText = text;
+      if (cleanText.startsWith('/sw:')) cleanText = cleanText.slice(4);
+      else if (cleanText.startsWith('/')) cleanText = cleanText.slice(1);
+      const parts = cleanText.split(/\s+/);
+      const cmd = parts[0];
+      const args = parts.slice(1);
+      const swCommands = ['doctor', 'sprint', 'sync', 'build', 'ticket', 'adopt', 'bug', 'change', 'new'];
+      if (usePiAgent && (swCommands.includes(cmd) || text.startsWith('/sw:') || text.startsWith('/sw-'))) {
+        const piMsg = text.startsWith('/') ? text : `/sw:${text}`;
+        ejecutar('pi', pid, [piMsg]).catch((err) => {
+          appendOutput(targetEl, `\n[error] ${err.message}\n`, 'stderr');
+        });
+      } else {
+        ejecutar(cmd, pid, args).catch((err) => {
+          appendOutput(targetEl, `\n[error] ${err.message}\n`, 'stderr');
+        });
+      }
+    }
+  }
+
+  function onInputKeyDown(e) {
+    const inputEl = e.target;
+    if (!inputEl) return;
+    if (e.key === 'ArrowUp') {
+      if (historyIdx > 0) {
+        historyIdx--;
+        inputEl.value = cmdHistory[historyIdx] || '';
+      }
+    } else if (e.key === 'ArrowDown') {
+      if (historyIdx < cmdHistory.length - 1) {
+        historyIdx++;
+        inputEl.value = cmdHistory[historyIdx] || '';
+      } else {
+        historyIdx = cmdHistory.length;
+        inputEl.value = '';
+      }
+    }
+  }
+
   // Key handler global
   function onKeyDown(e) {
     // No interferir si foco está en input/textarea/contenteditable
-    // Permitir Esc incluso si está en input si drawer abierto? Spec dice no interferir con input, así que ignoramos si input focused
     if (isInputFocused(e.target || (typeof document !== 'undefined' ? document.activeElement : null))) {
-      // Solo permitir Esc para cerrar ayuda? Pero spec dice no interferir, así que ignoramos todo
       return;
     }
     const key = e.key || '';
@@ -793,7 +1045,6 @@ export function createTerminalDrawer(container, options = {}) {
       alternar();
       return;
     }
-    // También manejar Ctrl+` sin code (algunos navegadores reportan key = '`')
     if (ctrl && (key === '`' || key === '~')) {
       e.preventDefault();
       alternar();
@@ -820,8 +1071,6 @@ export function createTerminalDrawer(container, options = {}) {
     }
     // ? muestra ayuda (sin ctrl/meta)
     if ((key === '?' || (key === '/' && e.shiftKey) || code === 'Slash' && e.shiftKey) && !ctrl && !meta) {
-      // Solo si drawer está abierto o siempre? Spec dice ? muestra ayuda atajos (cuando drawer?)
-      // Mostrar ayuda incluso si drawer cerrado? Lo mostramos
       e.preventDefault();
       mostrarAyuda();
       return;
@@ -837,6 +1086,10 @@ export function createTerminalDrawer(container, options = {}) {
     }
     if (drawerEl && drawerEl.addEventListener) {
       drawerEl.addEventListener('click', onBotonClick);
+      const formEl = drawerEl.querySelector('.drawer-input-bar');
+      if (formEl) formEl.addEventListener('submit', onSubmitInput);
+      const cmdInp = drawerEl.querySelector('.drawer-cmd-input');
+      if (cmdInp) cmdInp.addEventListener('keydown', onInputKeyDown);
     }
     conectado = true;
   }
@@ -847,6 +1100,10 @@ export function createTerminalDrawer(container, options = {}) {
     }
     if (drawerEl && drawerEl.removeEventListener) {
       drawerEl.removeEventListener('click', onBotonClick);
+      const formEl = drawerEl.querySelector('.drawer-input-bar');
+      if (formEl) formEl.removeEventListener('submit', onSubmitInput);
+      const cmdInp = drawerEl.querySelector('.drawer-cmd-input');
+      if (cmdInp) cmdInp.removeEventListener('keydown', onInputKeyDown);
     }
     conectado = false;
   }

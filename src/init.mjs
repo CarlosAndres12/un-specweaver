@@ -117,11 +117,51 @@ export async function init(opts) {
   return failed.length ? 1 : 0;
 }
 
-export function doctor(opts) {
+export async function update(opts = {}) {
+  const root = path.resolve(opts.dir || process.cwd());
+  const prior = readState(root);
+  const flags = { lang: opts.lang, engramScope: opts.engramScope, graphify: opts.graphify };
+  for (const [k, v] of Object.entries(flags)) {
+    if (v !== undefined) {
+      const err = validateFlag(k, v);
+      if (err) { console.error(err); return 2; }
+    }
+  }
+
+  const lang = flags.lang || prior?.lang || prior?.preferences?.lang || DEFAULTS.lang;
+  const flagAgents = opts.agents ? opts.agents.split(',').map((s) => s.trim()).filter(Boolean) : null;
+  const storedAgents = prior?.agents || prior?.preferences?.agents || null;
+  const ids = flagAgents || storedAgents || detectAgents().map((a) => a.id);
+
+  if (opts.vendors) {
+    return init({ ...opts, dir: root, agents: ids.join(','), yes: true, force: true, lang });
+  }
+
+  const hasCustomOnly = Array.isArray(opts.only) ? opts.only.length > 0 : Boolean(opts.only && String(opts.only).trim().length > 0);
+  const only = hasCustomOnly
+    ? (Array.isArray(opts.only) ? opts.only : opts.only.split(',').map((s) => s.trim()))
+    : ['gitignore', 'layer'];
+  return init({
+    ...opts,
+    dir: root,
+    agents: ids.join(','),
+    lang,
+    only,
+    force: true,
+  });
+}
+
+export async function doctor(opts) {
   const root = path.resolve(opts.dir || process.cwd());
   const state = readState(root);
   const prefs = { ...DEFAULTS, ...(state?.preferences || {}), ...(state?.lang ? { lang: state.lang } : {}) };
   const lang = opts.lang || prefs.lang;
+
+  if (opts.fix) {
+    console.log(`\n  ${t(lang, 'doctor.fixing')}\n`);
+    await init({ ...opts, dir: root, yes: true, lang });
+    console.log('');
+  }
 
   console.log(t(lang, 'doctor.header', root));
 

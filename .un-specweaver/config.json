@@ -1,22 +1,24 @@
 {
   "version": 1,
-  "installedAt": "2026-08-30T03:07:38.189Z",
+  "installedAt": "2026-09-05T04:34:14.009Z",
   "lang": "es",
   "preferences": {
     "lang": "es",
     "engramScope": "project",
     "graphify": "auto",
     "agents": [
-      "opencode"
+      "opencode",
+      "antigravity"
     ]
   },
   "agents": [
-    "opencode"
+    "opencode",
+    "antigravity"
   ],
   "vendors": {
     "bmad": "bmad-method@6.11.0",
     "openspec": "@fission-ai/openspec@1.10.0",
-    "gentle": "v2.4.0"
+    "gentle": null
   },
   "optional": {
     "graphify": {
@@ -44,41 +46,6 @@
   "steps": [
     {
       "id": "gitignore",
-      "ok": true,
-      "error": null
-    },
-    {
-      "id": "bmad",
-      "ok": true,
-      "error": null
-    },
-    {
-      "id": "bmad-prune",
-      "ok": true,
-      "error": null
-    },
-    {
-      "id": "openspec",
-      "ok": true,
-      "error": null
-    },
-    {
-      "id": "gentle-bin",
-      "ok": true,
-      "error": null
-    },
-    {
-      "id": "gentle-config",
-      "ok": true,
-      "error": null
-    },
-    {
-      "id": "engram-scope",
-      "ok": true,
-      "error": null
-    },
-    {
-      "id": "surface",
       "ok": true,
       "error": null
     },

@@ -106,10 +106,22 @@
       },
       "commands": ".opencode/commands",
       "commandStyle": "prefixed"
+    },
+    "antigravity": {
+      "bin": "agy",
+      "home": ".gemini",
+      "skills": ".agents/skills",
+      "ids": {
+        "bmad": "antigravity-cli",
+        "openspec": "antigravity",
+        "gentle": "antigravity"
+      },
+      "commands": ".agents/skills",
+      "commandStyle": "skill"
     }
   },
   "_adapters": "Cada vendor nombra los mismos agentes distinto (BMAD: claude-code / OpenSpec: claude / Gentle: claude-code). Este mapa es el unico lugar donde eso se sabe. Si un vendor renombra un id, se corrige aqui y nada mas.",
-  "_commands": "Solo Claude Code y OpenCode exponen un formato de comandos documentado. Claude: .claude/commands/<ns>/<n>.md -> /ns:n. OpenCode: .opencode/commands/<ns>-<n>.md -> /ns-n. Los demas agentes reciben la skill, que igual funciona: es el mismo contenido sin atajo.",
+  "_commands": "Claude Code y OpenCode usan archivos de comandos markdown (.claude/commands y .opencode/commands). Antigravity usa el formato 'skill' compilando cada comando en .agents/skills/sw-<name>/SKILL.md.",
   "surface": {
     "_comment": "Un solo vocabulario visible. Las skills de vendor se conservan enteras — son el valor y siguen siendo invocables. Lo que se poda son los COMANDOS que compiten con /sw:*: las fases del SDD (BMAD ya cubrio ese trabajo antes y mejor), los de OpenSpec (el flujo los llama por CLI) y los atajos bmad-* (los orquesta /sw:new). Podar el atajo no quita la skill.",
     "pruneCommandPrefixes": [
@@ -127,5 +139,5 @@
     "mcpServer": "engram",
     "bindProject": true
   },
-  "_agentsScope": "Solo Claude Code y OpenCode. Son los dos que este flujo soporta de punta a punta: ambos tienen formato de comandos documentado, ambos reciben las skills, y ambos se probaron end-to-end. Agregar un agente es agregar una entrada aqui, pero no se declara soportado hasta haberlo corrido completo."
+  "_agentsScope": "Claude Code, OpenCode y Antigravity. Son los tres soportados de punta a punta: reciben las skills y sus comandos/capacidades probados end-to-end."
 }

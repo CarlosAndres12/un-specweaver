@@ -154,6 +154,26 @@ Distribución remota, autenticación multi-usuario, persistencia en base de dato
 | **FR-063** | La documentación DEBE incluir `src/layer/commands/es/dashboard.md` describiendo uso, flags y ejemplos en español. | Must | Paso 7 |
 | **FR-064** | El sistema DEBE validar concurrencia multi-proyecto, SSE, supresión de eco y ejecución con `cwd` aislado mediante batería automatizada (`test/dashboard.test.mjs`). | Must | Paso 8 |
 
+### Capacidad 8 — Asistente Interactivo de Inicialización y Generación de Requisitos (Brief + PRD Numerado)
+
+| ID | Requisito | Prioridad | Traza |
+|----|-----------|-----------|-------|
+| **FR-070** | La UI DEBE proveer una página / asistente multi-paso (Wizard) para la creación de nuevos proyectos desde cero (`/sw:new`), validando ruta absoluta y nombre. | Must | Paso 9, `public/index.html`, `public/app.mjs` |
+| **FR-071** | El asistente DEBE capturar estructuradamente el **Product Brief**: problema u oportunidad, público objetivo / usuarios clave, propuesta de valor, KPIs de éxito y límites de alcance (Out-of-Scope). | Must | Formulario Paso 2 |
+| **FR-072** | El asistente DEBE permitir la adición, edición y eliminación dinámica de **Requisitos Funcionales (`FR-XXX`)** y **Requisitos No Funcionales (`NFR-XXX`)** con numeración determinística y criterios de aceptación. | Must | Formulario Paso 3 |
+| **FR-073** | El asistente DEBE permitir configurar el estilo arquitectónico, stack tecnológico, preferencias de memoria Engram y opciones de Graphify. | Must | Formulario Paso 4 |
+| **FR-074** | El asistente DEBE generar una previsualización interactiva de `product-brief.md` y `prd.md` con requisitos normativos numerados antes de la creación. | Must | Formulario Paso 5 |
+| **FR-075** | El endpoint `POST /api/projects/wizard` DEBE crear el directorio, persistir atómicamente los artefactos (`product-brief.md`, `prd.md`, `.un-specweaver/config.json`), registrar el proyecto en `projects.json`, disparar la inicialización en streaming a la Pi Shell y conmutar el contexto activo inmediatamente. | Must | `wizard-service.mjs`, `server.mjs` |
+
+### Capacidad 9 — Comando y Flujo de Actualización (`un-specweaver update`)
+
+| ID | Requisito | Prioridad | Traza |
+|----|-----------|-----------|-------|
+| **FR-080** | El binario DEBE exponer el comando `un-specweaver update [dir]`, permitiendo sincronizar la capa de skills (`layer`) y artefactos de agente en un proyecto ya inicializado sin exigir flags manuales complejos. | Must | `bin/un-specweaver.mjs`, `src/init.mjs` |
+| **FR-081** | El comando `update` DEBE respetar y preservar los artefactos existentes del usuario (`architecture-base.md`, `openspec/`, reglas personalizadas), admitir `--agents <ids>`, `--vendors` y persistir la configuración actualizada en `.un-specweaver/config.json`. | Must | `src/init.mjs`, `src/steps.mjs` |
+| **FR-082** | El Dashboard Web y la API DEBEN permitir ejecutar la acción `update` sobre el proyecto activo con streaming en tiempo real a la terminal integrada (xterm.js). | Should | `server.mjs`, `command-runner.mjs` |
+| **FR-083** | La capa DEBE compilar la skill `sw-update` para todos los agentes configurados con las instrucciones de pre-chequeo y actualización controlada. | Must | `src/layer/commands/*/update.md` |
+
 ## 6. Requisitos no funcionales
 
 | ID | Requisito | Criterio de aceptación | Prioridad |

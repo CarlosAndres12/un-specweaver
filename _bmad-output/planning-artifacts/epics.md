@@ -417,6 +417,346 @@ architecture: architecture.md
 
 ---
 
+---
+
+## Epic 5: Asistente Interactivo Multi-Paso de Creación de Proyecto (Brief + PRD Numerado)
+
+**Objetivo:** Guiar al usuario a través de un wizard interactivo para estructurar un nuevo proyecto desde cero (`/sw:new`), definiendo el Product Brief, el PRD con requisitos funcionales y no funcionales numerados (`FR-XXX`, `NFR-XXX`), la arquitectura base y la inicialización determinística en disco con conmutación inmediata.
+
+**Incluye:** `src/dashboard/wizard-service.mjs`, endpoint `POST /api/projects/wizard`, vista SPA `#vista-nuevo-proyecto`, generador de artefactos Markdown, diagramas de flujo y Pi Shell streaming.
+
+**Depende de:** Epic 1, Epic 2, Epic 4.
+
+### Story 5.1: Formulario multi-paso interactivo en Frontend SPA
+
+**Description:** Como desarrollador o agente, quiero una interfaz asistida de 5 pasos con barra de progreso, validación por paso y campos dinámicos para requisitos numerados, de modo que pueda formular proyectos completos sin fricción.
+
+**FRs:** FR-070, FR-071, FR-072, FR-073
+
+**Acceptance Criteria:**
+
+- **Given** la SPA en el navegador
+  **When** selecciono la vista "🌱 Nuevo Proyecto"
+  **Then** se presenta el asistente de 5 pasos (1: Identidad, 2: Brief, 3: PRD & Requisitos, 4: Arquitectura, 5: Previsualización & Lanzamiento) con stepper visual.
+
+- **Given** el Paso 3 (PRD & Requisitos)
+  **When** presiono "Añadir Requisito Funcional" o "Añadir Requisito No Funcional"
+  **Then** se inserta una nueva fila con ID autoincremental (`FR-00X`, `NFR-00X`), campo de título y criterios de aceptación, permitiendo eliminación individual.
+
+- **Given** campos obligatorios incompletos en un paso
+  **When** intento avanzar con "Siguiente"
+  **Then** el paso bloquea la transición y resalta visualmente los campos requeridos en español técnico.
+
+---
+
+### Story 5.2: Generador determinístico de Product Brief y PRD con requisitos numerados
+
+**Description:** Como sistema, quiero compilar los datos del formulario en artefactos normativos Markdown estructurados (`product-brief.md` y `prd.md`), respetando las convenciones y formatos de BMad.
+
+**FRs:** FR-071, FR-072, FR-074
+
+**Acceptance Criteria:**
+
+- **Given** los datos completados del asistente
+  **When** se alcanza el Paso 5 (Previsualización)
+  **Then** la UI genera una vista previa renderizada en vivo de `_bmad-output/planning-artifacts/product-brief.md` y `prd.md` con tabla de requisitos normativos numerados (`FR-XXX`, `NFR-XXX`) y diagramas de arquitectura.
+
+- **Given** el PRD generado
+  **When** se inspeccionan los requisitos
+  **Then** cada requisito contiene su código (`FR-001`, `FR-002`, `NFR-001`), descripción normativa con el verbo DEBE, y prioridad (Must/Should).
+
+---
+
+### Story 5.3: Endpoint `/api/projects/wizard` con inicialización y conmutación automática
+
+**Description:** Como cliente SPA, quiero enviar el payload completo del wizard al backend para materializar la estructura de carpetas, persistir los artefactos, registrar el proyecto y ejecutar la inicialización en streaming hacia la Pi Shell.
+
+**FRs:** FR-075
+
+**Acceptance Criteria:**
+
+- **Given** `POST /api/projects/wizard` con payload válido
+  **When** el servidor procesa la solicitud
+  **Then** crea el directorio destino si no existe, escribe `_bmad-output/planning-artifacts/product-brief.md`, `_bmad-output/planning-artifacts/prd.md`, `.un-specweaver/config.json`, registra el proyecto en `~/.un-specweaver/projects.json`, retorna `201 { project, executionId }` y conmuta automáticamente el proyecto activo en la UI en `<100ms`.
+
+- **Given** `path` no absoluto o ruta inválida
+  **When** hago `POST /api/projects/wizard`
+  **Then** retorna `400 INVALID_PATH` sin escribir archivos y con mensaje descriptivo en español.
+
+---
+
+## Epic 6: Consola Interactiva Xterm.js para Pi Coding Agent y Barra de Sesiones
+
+**Objetivo:** Proporcionar una experiencia de terminal de grado profesional interactiva basada en Xterm.js para ejecutar el agente de codificación local Pi (`/usr/bin/pi`) y herramientas de SpecWeaver, eliminando la necesidad de hacer scroll al pie de página mediante auto-apertura y botón flotante persistente.
+
+**Incluye:** Integración de `@xterm/xterm` y `@xterm/addon-fit`, botón flotante (FAB) de acceso rápido, captura bidireccional de stdin, barra superior de gestión de sesiones (`pi -c`, `pi -r`) y apertura reactiva sin scroll.
+
+**Depende de:** Epic 4. **Bloquea a:** nada.
+
+### Story 6.1: Terminal Drawer interactivo con Xterm.js y Botón Flotante (Zero-Scroll)
+
+**Description:** Como desarrollador, quiero ver el resultado de cualquier comando inmediatamente en un terminal interactivo Xterm.js sin tener que desplazarme al final de la página, pudiendo abrirlo desde cualquier parte con un botón flotante persistente.
+
+**FRs:** FR-050, FR-052, FR-056
+
+**Acceptance Criteria:**
+
+- **Given** el usuario se encuentra en cualquier sección o posición de scroll del panel
+  **When** hace clic en cualquier botón de acción (`doctor`, `build`, `pi`, etc.) o en el botón flotante `[💻 Terminal]`
+  **Then** el cajón de terminal se abre de forma inmediata y automática con animación suave, enfocando la consola Xterm.js sin requerir scroll manual al pie de página.
+
+- **Given** el terminal se encuentra abierto
+  **When** se redimensiona la ventana o el drawer
+  **Then** el `FitAddon` recalcula las filas y columnas adaptando el lienzo de Xterm.js fluidamente.
+
+- **Given** el usuario presiona `Esc` o hace clic en el botón cerrar
+  **When** el terminal se cierra
+  **Then** el botón flotante permanece visible con indicador de estado si hay un proceso ejecutándose en segundo plano.
+
+---
+
+### Story 6.2: Ejecución e Interacción Bidireccional con Pi Agent (`/usr/bin/pi`)
+
+**Description:** Como desarrollador, quiero interactuar bidireccionalmente con el agente de codificación Pi en tiempo real a través de Xterm.js con soporte completo para secuencias ANSI, cursor y teclas de control.
+
+**FRs:** FR-052, FR-060, FR-061
+
+**Acceptance Criteria:**
+
+- **Given** una sesión iniciada con el comando `pi`
+  **When** el agente local emite secuencias de escape ANSI (colores, formateo de texto, prompts)
+  **Then** Xterm.js renderiza los estilos con fidelidad completa sin romper texto plano ni códigos crudos.
+
+- **Given** el usuario escribe en el terminal (letras, Enter, flechas, Ctrl+C)
+  **When** se dispara el evento `term.onData`
+  **Then** los bytes se transmiten a través del endpoint `POST /api/projects/:id/commands/:execId/input` hacia el flujo `stdin` del subproceso `child_process`.
+
+---
+
+### Story 6.3: Barra de Herramientas y Selector de Sesiones Previas
+
+**Description:** Como desarrollador, quiero una barra de herramientas en la cabecera del terminal para alternar entre ejecuciones activas, continuar la última sesión (`pi -c`) o reanudar sesiones históricas (`pi -r`).
+
+**FRs:** FR-052, FR-053
+
+**Acceptance Criteria:**
+
+- **Given** el terminal drawer desplegado
+  **When** se inspecciona la barra superior de herramientas
+  **Then** presenta un selector de sesión activa/histórica y botones de acceso directo: `[+ Nueva Sesión (pi)]`, `[🔄 Continuar (pi -c)]`, `[📜 Reanudar (pi -r)]`.
+
+- **Given** el usuario hace clic en `[🔄 Continuar (pi -c)]`
+  **When** se lanza el comando
+  **Then** se invoca `pi` con el argumento `-c` en el directorio de trabajo del proyecto activo y se asocia la sesión en el selector.
+
+- **Given** hay múltiples comandos o sesiones ejecutadas
+  **When** el usuario selecciona una sesión previa en el desplegable
+  **Then** el visor conmuta al buffer/historial correspondiente sin perder el estado del proceso en ejecución.
+
+---
+
+## Epic 7: Comando y flujo de actualización (`un-specweaver update`)
+
+**Objetivo:** proveer un comando unificado y predecible `un-specweaver update` para sincronizar las skills, comandos y dependencias en proyectos ya existentes, sin requerir combinaciones manuales de flags.
+
+**Incluye:** CLI dispatch `update` en `bin/un-specweaver.mjs`, lógica de actualización de capa y agentes en `src/init.mjs`, integración con el runner en `src/dashboard/` y comando/skill `sw-update`.
+
+**Depende de:** Epic 1 y Epic 4. **Bloquea a:** nada (mejora de ciclo de vida).
+
+### Story 7.1: Comando CLI `un-specweaver update`
+
+**Description:** Como desarrollador, quiero ejecutar `npx un-specweaver update [dir]` en un proyecto previamente inicializado para actualizar la capa de skills y comandos de forma segura sin tener que recordar banderas manuales.
+
+**FRs:** FR-080, FR-081
+
+**Acceptance Criteria:**
+
+- **Given** un proyecto previamente inicializado con `.un-specweaver/config.json`
+  **When** ejecuto `npx un-specweaver update` (o `npx un-specweaver update /ruta/al/proyecto`)
+  **Then** el comando lee la configuración guardada, regenera la capa `layer` para los agentes registrados (escribiendo `.agents/skills/`, `.claude/`, etc.) sin sobreescribir `docs/architecture-base.md` ni `openspec/` y finaliza con código 0.
+
+- **Given** un proyecto con agentes desactualizados o nuevos agentes
+  **When** ejecuto `npx un-specweaver update --agents antigravity`
+  **Then** actualiza el arreglo de agentes en `.un-specweaver/config.json` y genera los artefactos del nuevo agente (ej. `.agents/skills/sw-*/SKILL.md`).
+
+- **Given** la bandera `--vendors` o `--force`
+  **When** ejecuto `npx un-specweaver update --vendors`
+  **Then** ejecuta la comprobación de drift y reconciliación de versiones de vendors pineados.
+
+- **Given** la bandera `--dry-run`
+  **When** se invoca con `update`
+  **Then** muestra las acciones previstas sin modificar ningún archivo en disco.
+
+---
+
+### Story 7.2: Acción de actualización en Dashboard y Streaming
+
+**Description:** Como desarrollador en el dashboard web, quiero poder disparar la actualización de skills y entorno del proyecto activo con visualización en tiempo real en la terminal integrada.
+
+**FRs:** FR-082
+
+**Acceptance Criteria:**
+
+- **Given** el dashboard web abierto en un proyecto
+  **When** se hace clic en `[🔄 Actualizar entorno]` o se envía `POST /api/projects/:id/commands { command: "update" }`
+  **Then** el runner ejecuta `un-specweaver update` con streaming SSE en la terminal Drawer y actualiza el estado consolidado al concluir.
+
+---
+
+### Story 7.3: Skill y flujo guiado `sw-update`
+
+**Description:** Como agente IA (Claude, OpenCode, Antigravity), quiero disponer de la skill `sw-update` para guiar al desarrollador en la actualización segura del repositorio asegurando precondiciones (git limpio, doctor).
+
+**FRs:** FR-083
+
+**Acceptance Criteria:**
+
+- **Given** la ejecución de la capa `layer`
+  **When** se generan los comandos y skills para los agentes
+  **Then** se compilan `src/layer/commands/*/update.md` en los destinos correspondientes (`.claude/commands/sw/update.md`, `.opencode/commands/sw-update.md`, `.agents/skills/sw-update/SKILL.md`) con el paso a paso de verificación y actualización.
+
+---
+
+## Epic 8: Reconstrucción Frontend React + React Flow e Interactividad Bidireccional Software-to-Software
+
+**Objetivo:** Sustituir la interfaz web estática y monolítica por una arquitectura React moderna basada en un lienzo interactivo con React Flow (`@xyflow/react`). Proporcionar sincronización bidireccional "software-to-software" en tiempo real: los cambios y conexiones realizados en el lienzo actualizan directamente las especificaciones y código en disco (`epics.md`, `sprint.json`, `.spec/`), mientras que las modificaciones hechas por desarrolladores o agentes IA en el filesystem se reflejan instantáneamente en el canvas mediante SSE sin pérdida de viewport.
+
+**Incluye:** Configuración de Vite/React en `src/dashboard/frontend/` compilado hacia `src/dashboard/public/`, canvas React Flow con nodos de dominio (Épicas, Historias, Specs, Contratos), motor de auto-layout DAG, endpoints de mutación granular en `src/dashboard/server.mjs` y `state-adapter.mjs`, y panel inspector contextual.
+
+**Depende de:** Epic 1, 2 y 4. **Bloquea a:** nada (evolución mayor de la interfaz).
+
+### Story 8.1: Infraestructura Frontend Moderna (React + Vite) y Arquitectura de Componentes
+
+**Description:** Como desarrollador, quiero que el frontend del dashboard esté construido con React y Vite bajo una arquitectura modular y desacoplada (Container-Presentational / Atomic Design), servido limpiamente por `server.mjs`, para superar las limitaciones del monolito de scripts vanilla y permitir interfaces reactivas complejas.
+
+**FRs:** FR-090
+
+**Acceptance Criteria:**
+
+- **Given** la estructura de código en `src/dashboard/frontend/`
+  **When** ejecuto `npm run build` o `npm run dev`
+  **Then** Vite compila la aplicación React hacia `src/dashboard/public/` generando bundles optimizados con hashing de assets y ESM nativo.
+
+- **Given** el servidor `src/dashboard/server.mjs` iniciado en puerto 3100
+  **When** accedo a `http://localhost:3100`
+  **Then** `server.mjs` sirve la SPA React con fallback adecuado a `index.html` para rutas del cliente, manteniendo tiempos de carga inicial (LCP) inferiores a 500 ms.
+
+- **Given** el cambio de preferencia de tema (claro / oscuro) en la UI o en el sistema
+  **When** el usuario conmuta el tema
+  **Then** la aplicación adapta todos los tokens CSS y componentes de forma inmediata utilizando variables de diseño centralizadas sin parpadeos (FOUC).
+
+- **Given** la navegación entre pestañas y vistas (Tablero, Sprint, Specs, Arquitectura)
+  **When** el usuario cambia de sección
+  **Then** las transiciones utilizan la View Transitions API (`same-document-transitions`) de forma fluida con degradación elegante en navegadores no compatibles.
+
+**Notas técnicas:** Mantener cero dependencias pesadas innecesarias. Configurar Vite con `@vitejs/plugin-react`. Definir tokens semánticos en CSS Vanilla o Tailwind estructurado respetando la paleta existente.
+
+---
+
+### Story 8.2: Lienzo Interactivo con React Flow (`@xyflow/react`) y Nodos de Dominio
+
+**Description:** Como arquitecto y desarrollador, quiero visualizar el flujo E2E, la arquitectura de software, el DAG de olas de sprint y las dependencias de especificaciones en un lienzo interactivo React Flow con soporte de pan/zoom, minimapa y layout automático, para reemplazar los SVGs estáticos por una representación viva.
+
+**FRs:** FR-091
+
+**Acceptance Criteria:**
+
+- **Given** un proyecto activo con épicas, historias y especificaciones
+  **When** abro la vista de arquitectura o tablero
+  **Then** se renderiza un canvas interactivo React Flow con nodos customizados tipados: `EpicNode`, `StoryNode`, `SpecNode`, `ContractNode` y `WaveNode`.
+
+- **Given** un grafo con N nodos y dependencias declaradas
+  **When** se carga la vista o se pulsa el botón `[✨ Auto-Layout]`
+  **Then** el motor calcula la distribución jerárquica libre de colisiones (algoritmo DAG por niveles) respetando el flujo de izquierda a derecha (o arriba a abajo).
+
+- **Given** el usuario interactuando con el canvas
+  **When** realiza paneo, zoom con rueda/gesto o navega mediante el minimapa
+  **Then** el rendimiento se mantiene a 60 fps estables sin retrasos ni degradación visual.
+
+- **Given** un nodo en el canvas
+  **When** cambia el estado de la entidad asociada (ej. historia pasa a `in-progress` o spec a `implemented`)
+  **Then** el nodo actualiza su estilo visual, borde de color e indicador de estado de forma reactiva.
+
+**Notas técnicas:** Usar `@xyflow/react`. Implementar custom nodes accesibles con puertos de entrada/salida tipados (`Handle`). Integrar cálculo de layout desacoplado para no bloquear el hilo principal.
+
+---
+
+### Story 8.3: Motor de Mutación Bidireccional Visual ↔ Código (Visual-to-Code Sync)
+
+**Description:** Como desarrollador, quiero que al modificar conexiones, dependencias o propiedades en el lienzo de React Flow, el sistema actualice automáticamente los archivos markdown y JSON correspondientes en el filesystem, cerrando el bucle software-to-software.
+
+**FRs:** FR-092
+
+**Acceptance Criteria:**
+
+- **Given** dos historias A y B en el lienzo sin dependencia previa
+  **When** el usuario arrastra un conector desde el puerto de salida de A al puerto de entrada de B (`onConnect`)
+  **Then** el cliente envía `POST /api/projects/:id/graph/edges` con `{ source: "A", target: "B", type: "dependsOn" }`.
+
+- **Given** la recepción del endpoint de mutación de dependencias en el backend
+  **When** `state-adapter.mjs` procesa la solicitud
+  **Then** localiza la sección de dependencias en `epics.md` / `sprint.json`, actualiza la regla de precedencia, persiste atómicamente el archivo en disco e incluye el token de supresión de eco para evitar rebote de eventos hacia el cliente emisor.
+
+- **Given** un usuario que edita el título, criterios o estado de una historia en el modal/panel del nodo
+  **When** confirma la edición (`onNodeChange`)
+  **Then** se despacha `PATCH /api/projects/:id/stories/:storyId`, actualizando el bloque correspondiente en `epics.md` preservando comentarios, formato e indentación intactos.
+
+- **Given** un intento de conexión que generaría un ciclo de dependencia circular (A → B → A)
+  **When** el usuario intenta conectar los nodos
+  **Then** el canvas valida el ciclo localmente, rechaza la conexión, resalta temporalmente en rojo y muestra un mensaje de advertencia accesible sin alterar los archivos.
+
+**Notas técnicas:** El backend debe utilizar parseo AST estructurado para markdown o delimitadores unívocos en `state-adapter.mjs`. Escrituras con `writeAtomic()` y ventana de supresión de eco activa.
+
+---
+
+### Story 8.4: Sincronización en Tiempo Real Código ↔ Visual mediante SSE
+
+**Description:** Como desarrollador que utiliza herramientas CLI o agentes autónomos (OpenCode, Claude, Antigravity) en terminal, quiero que cualquier cambio realizado directamente en los archivos de disco se proyecte de inmediato en el lienzo de React Flow sin recargar la página ni perder mi posición de trabajo.
+
+**FRs:** FR-093
+
+**Acceptance Criteria:**
+
+- **Given** el canvas React Flow abierto enfocado en un subconjunto de nodos
+  **When** un agente IA en CLI crea una nueva historia o modifica un spec en disco
+  **Then** el watcher de `server.mjs` detecta la modificación, emite el evento SSE correspondiente (`epics_updated`, `sprint_updated`, `specs_updated`) y el store de React Flow actualiza los nodos sin reiniciar el viewport (`zoom`/`pan`).
+
+- **Given** una historia que es eliminada o renombrada desde el editor de código
+  **When** el evento SSE llega al cliente
+  **Then** el nodo y sus aristas conectadas se remueven o actualizan mediante transiciones suaves animadas.
+
+- **Given** una escritura originada desde la propia interfaz web (Story 8.3)
+  **When** el watcher detecta el cambio en disco dentro de la ventana de eco (<500 ms con token coincidente)
+  **Then** el evento SSE se suprime o se marca como redundante, evitando re-renders duplicados o parpadeos en el lienzo.
+
+**Notas técnicas:** Conectar el stream SSE global con el store de React Flow. Aplicar reconciliación por ID de nodo para preservar posiciones de nodos si el usuario los ha reorganizado manualmente.
+
+---
+
+### Story 8.5: Panel Lateral Inspector y Consola Terminal Reactiva
+
+**Description:** Como ingeniero de software, quiero hacer clic en cualquier nodo del lienzo interactivo para abrir un panel lateral con el contenido real de la especificación/código, y poder ejecutar acciones contextuales directas (`build`, `doctor`, `test`) con salida visual en la terminal drawer.
+
+**FRs:** FR-094
+
+**Acceptance Criteria:**
+
+- **Given** el lienzo con múltiples nodos
+  **When** el usuario hace clic en un nodo de Historia o Spec
+  **Then** se abre un panel lateral contextual (drawer) mostrando el markdown fuente, requisitos funcionales vinculados, criterios Given/When/Then y estado git.
+
+- **Given** el panel lateral abierto para una historia lista para construcción
+  **When** el usuario hace clic en el botón `[🔨 Construir Story]`
+  **Then** se despliega el terminal drawer con xterm.js, se ejecuta el comando `build` asociado mediante streaming en tiempo real y el nodo en el canvas entra en estado visual animado `building`.
+
+- **Given** la finalización exitosa del comando de construcción en la terminal
+  **When** el proceso concluye con código de salida 0
+  **Then** el nodo transiciona automáticamente a estado verde `completed` en el lienzo con un micro-feedback visual.
+
+**Notas técnicas:** Reutilizar la integración `@xterm/xterm` ya probada en Epic 6, integrándola en un layout reactivo con Split-Pane o Navigation Drawer.
+
+---
+
 ## Dependencias entre stories
 
 ```
@@ -427,14 +767,26 @@ architecture: architecture.md
                      2.3 ─┴─→ 2.4 ─→ 3.1 ─→ 3.2
                                           │
                                      4.1 ─┴─→ 4.2 ─→ 4.3 ─→ 4.4
+                                                           │
+                                                      5.1 ─┴─→ 5.2 ─→ 5.3
+                                                                      │
+                                                                 6.1 ─┴─→ 6.2 ─→ 6.3
+                                                                                 │
+                                                                            7.1 ─┴─→ 7.2 ─→ 7.3
+                                                                                            │
+                                                                                       8.1 ─┴─→ 8.2 ─→ 8.3 ─→ 8.4 ─→ 8.5
 ```
 
 - **Epic 1** es fundación sin dependencias externas.
 - **Epic 2** depende de Epic 1 (necesita `project-manager` y `state-adapter` para resolver `projectId`→`projectPath`).
 - **Epic 3** depende de Epic 1+2 (necesita `state` y `server`).
 - **Epic 4** depende de 1+2+3 (SPA consume `state`, `diagram`, `SSE`, `commands`).
+- **Epic 5** depende de 1+2+4 (asistente de creación e integración con `projects.json`, `app.mjs` y streaming).
+- **Epic 6** depende de Epic 4 (integración con `terminal-drawer` y `commands` API).
+- **Epic 7** depende de Epic 1 y Epic 4 (actualización de layer, CLI y runner de dashboard).
+- **Epic 8** depende de Epic 1, 2, 4 y 6 (reemplaza el frontend estático por React + React Flow con bi-direccionalidad hacia el backend y terminal drawer).
 
-Paralelizable dentro de cada epic: 1.1 y 1.3 pueden iniciarse en paralelo tras esqueleto; 2.3 y 2.2 en paralelo tras 2.1.
+Paralelizable dentro de cada epic: 1.1 y 1.3 en paralelo tras esqueleto; 2.3 y 2.2 en paralelo tras 2.1; 5.1 y 5.2 en paralelo; 6.2 y 6.3 en paralelo; 7.1 y 7.3 en paralelo tras diseño; 8.1 y 8.2 en paralelo tras definir los contratos de datos del grafo.
 
 ## Traza FR → Story
 
@@ -454,15 +806,30 @@ Paralelizable dentro de cada epic: 1.1 y 1.3 pueden iniciarse en paralelo tras e
 | FR-052,053,056 | 4.2 |
 | FR-060,061,063 | 4.3 |
 | FR-062,064 | 4.4 |
+| FR-070,071,072,073 | 5.1 |
+| FR-071,072,074 | 5.2 |
+| FR-075 | 5.3 |
+| FR-050,052,056 | 6.1 |
+| FR-052,060,061 | 6.2 |
+| FR-052,053 | 6.3 |
+| FR-080,081 | 7.1 |
+| FR-082 | 7.2 |
+| FR-083 | 7.3 |
+| FR-090 | 8.1 |
+| FR-091 | 8.2 |
+| FR-092 | 8.3 |
+| FR-093 | 8.4 |
+| FR-094 | 8.5 |
 
 ## Criterios de listo (DoD) por story
 
 - Código ESM estricto, sin `process.chdir`, rutas absolutas validadas.
-- Tests `node --test` que cubren Given/When/Then de la story (o justificación si es manual).
+- Tests `node --test` o pruebas de componentes que cubren Given/When/Then de la story.
 - Endpoint/contrato documentado en `architecture.md` si aplica.
 - `npm test` verde sin regresiones.
 - Copy en español técnico si toca UI.
+- Atomicidad en escrituras Web→disco con supresión de eco probada (<500 ms).
 
 ---
 
-*Epics derivados del PRD `prd.md` y spine `architecture.md` — 4 epics, 12 stories, 8 pasos del plan cubiertos.*
+*Epics derivados del PRD `prd.md` y spine `architecture.md` — 8 epics, 26 stories.*
