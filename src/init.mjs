@@ -174,7 +174,7 @@ export async function doctor(opts) {
   const ctx = { root, agents, lang, prefs, platform: pf.platform, langName: t(lang, 'lang.name') };
 
   console.log(t(lang, 'doctor.steps'));
-  let blockingPlan = 0, pendingOther = 0;
+  let blockingPlan = 0, pendingOther = 0, drifted = false;
   for (const step of buildPlan(ctx)) {
     const isPending = step.status.state === 'pending';
     if (isPending) (step.blocks === 'plan' ? blockingPlan++ : pendingOther++);
@@ -191,6 +191,7 @@ export async function doctor(opts) {
     const present = { bmad: fs.existsSync(path.join(root, '_bmad')), openspec: fs.existsSync(path.join(root, 'openspec')), gentle: !!which(VENDORS.gentle.bin) };
     for (const [k, v] of Object.entries(now)) {
       const had = state.vendors?.[k];
+      if (present[k] && had !== v) drifted = true;
       const mark = !present[k] ? t(lang, 'missing') : had === v ? t(lang, 'ok') : t(lang, 'drift');
       const actual = !present[k] ? t(lang, 'doctor.notInstalled') : (had || t(lang, 'doctor.unknownVersion'));
       console.log(`  ${mark}  ${k.padEnd(14)} ${t(lang, 'doctor.vendorLine', actual, v)}`);
@@ -203,5 +204,5 @@ export async function doctor(opts) {
     blockingPlan ? t(lang, 'doctor.pendingPlan', blockingPlan)
     : pendingOther ? t(lang, 'doctor.pendingBuildOnly', pendingOther)
     : t(lang, 'doctor.allGood'));
-  return 0;
+  return (drifted || blockingPlan > 0) ? 1 : 0;
 }

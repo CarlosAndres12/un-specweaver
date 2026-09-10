@@ -19,9 +19,9 @@ import {
 // falso y nunca invoca los stubs (log ausente); no hizo falta `--only` menor
 // ni stub con marcador `ok`. El único subprocess ajeno es `brew tap-info`
 // durante el `doctor` (lo ejecuta `plan()` de gentle-config para pintar el
-// estado), interceptado por el stub sin red. Desviación registrada: `doctor`
-// sale 0 incluso con deriva (el spec pedía ≠0); se aserta el marcador DRIFT
-// en salida y se deja el exit≠0 como fix candidato de prod, fuera del slice.
+// estado), interceptado por el stub sin red. Desviación resuelta: `doctor`
+// sale ≠0 con deriva o bloqueo de plan (fix de prod en src/init.mjs);
+// el pin 3.3 aserta el marcador DRIFT en salida y el exit≠0.
 
 const BIN = path.resolve(import.meta.dirname, '../bin/un-specweaver.mjs');
 const FIXTURE_ES = path.resolve(import.meta.dirname, '../fixtures/epics.sample.md');
@@ -176,16 +176,21 @@ for (const [lang, fixture] of [['es', FIXTURE_ES], ['en', FIXTURE_EN]]) {
 }
 
 // ---------------------------------------------------------------------------
-// Tarea 3.3 — doctor SHALL salir 0 en limpio y reportar la deriva;
-// desviación: el exit sigue 0 tras mutar (fix candidato de prod, no aquí)
+// Tarea 3.3 — doctor SHALL salir 0 en limpio y ≠0 con deriva (resuelto:
+// doctor retorna 1 con DRIFT o bloqueo de plan; ver src/init.mjs)
 // ---------------------------------------------------------------------------
 
-test('L4 — doctor limpio sale 0 sin DRIFT; tras deriva reporta DRIFT (exit aún 0: desviación)', { timeout: 120000 }, async () => {
+test('L4 — doctor limpio sale 0 sin DRIFT; tras deriva reporta DRIFT con exit ≠ 0', { timeout: 120000 }, async () => {
   await withIsolatedHome(async (home) => {
     const proj = makeTempProject('l4-e2e-');
     const { dir: stubDir, log } = makeStubDir();
     try {
       const env = fakeEnv(stubDir, home);
+      // Estado limpio genuino: _bmad/ y openspec/ preexisten, asi init --only
+      // registra las versiones pineadas y ningun paso bloquea planear
+      // (blockingPlan 0, sin DRIFT). Puro FS hermetico, sin red.
+      fs.mkdirSync(path.join(proj, '_bmad'), { recursive: true });
+      fs.mkdirSync(path.join(proj, 'openspec'), { recursive: true });
       const ri = runCli(
         ['init', proj, '--agents', 'claude-code', '--lang', 'es', '--only', 'layer,surface,gitignore', '--yes'],
         { cwd: proj, env },
@@ -194,16 +199,19 @@ test('L4 — doctor limpio sale 0 sin DRIFT; tras deriva reporta DRIFT (exit aú
       const clean = runCli(['doctor', proj, '--lang', 'es'], { cwd: proj, env });
       assert.equal(clean.status, 0, 'doctor limpio debe salir 0');
       assert.ok(!clean.stdout.includes('DRIFT'), 'doctor limpio no debe reportar deriva');
-      // Deriva hermética sin binarios externos: aparece _bmad/ sin versión
-      // registrada en el estado (presente sin `had` ⇒ DRIFT "versión desconocida").
-      fs.mkdirSync(path.join(proj, '_bmad'), { recursive: true });
+      // Deriva hermética sin binarios externos: se adultera la versión
+      // registrada en el estado (presente pero recorded !== pinned ⇒ DRIFT).
+      const stateFile = path.join(proj, '.un-specweaver', 'config.json');
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      state.vendors.bmad = 'bmad-method@0.0.0-drift';
+      fs.writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');
       const drifted = runCli(['doctor', proj, '--lang', 'es'], { cwd: proj, env });
       assert.match(drifted.stdout, /DRIFT\s+bmad/, 'doctor tras mutar un vendor debe reportar la deriva');
       assert.notEqual(drifted.stdout, clean.stdout, 'la salida con deriva debe diferir de la limpia');
-      assert.equal(
+      assert.notEqual(
         drifted.status,
         0,
-        'DESVIACIÓN del spec (≠0 pedido): doctor sale 0 aun con deriva — fix candidato de prod, no de este slice',
+        'RESUELTO (antes DESVIACIÓN del spec): doctor sale ≠0 con deriva — retorna 1 con DRIFT o bloqueo de plan',
       );
     } finally {
       cleanupDirs(proj, stubDir);
