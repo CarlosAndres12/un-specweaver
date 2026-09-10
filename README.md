@@ -303,18 +303,141 @@ Preflight lo revisa como **aviso, no como bloqueante**: las skills de BMAD traen
 
 ## Comandos del CLI
 
+Quince comandos. La ayuda sale del mismo codigo que ejecuta, asi que no puede mentir:
+
 ```bash
-npx un-specweaver init [dir]          # monta el entorno completo
-npx un-specweaver doctor [dir]        # salud, pasos pendientes y drift de vendors
-npx un-specweaver bridge <epics.md>   # stories de BMAD -> changes de OpenSpec
-npx un-specweaver vendors             # versiones pineadas
+npx un-specweaver --help              # ayuda completa, sale 1 sin comando
+npx un-specweaver --version           # version, sale 0
+npx un-specweaver <comando> --help    # ayuda completa, sale 0 (salvo bridge y dashboard)
 ```
 
-`init` acepta `--agents`, `--lang es|en`, `--dry-run`, `--yes`, `--force`, `--prune-extra`,
-`--only`, `--skip`, `--keep-going`.
+Sin comando imprime la ayuda y sale 1; comando o flag desconocido sale 2. Ojo: `--help`
+junto a un comando imprime la ayuda global (no una por comando); solo `dashboard` tiene
+ayuda propia y `bridge` rechaza `--help` (ver abajo).
+
+| Comando | Que hace |
+|---|---|
+| `init [dir]` | monta el entorno completo (ver abajo) |
+| `new [dir]` | como `init`, sin preguntar |
+| `adopt [dir]` | como `init`, sin preguntar y rehecho |
+| `update [dir]` | actualiza skills, comandos y config sin tocar arquitectura ni specs |
+| `doctor [dir]` | salud, pasos pendientes y drift; sale 1 si hay deriva o bloqueo |
+| `bridge <epics.md>` | stories de BMAD → changes de OpenSpec |
+| `sprint [dir]` | olas de trabajo paralelo desde `epics.md` |
+| `sync [dir]` | `bridge` si hay epics, si no `doctor` |
+| `build [...]` | valida specs o corre `bridge` con tus flags |
+| `change` / `bug` / `ticket` | te dicen que comando del agente correr |
+| `context [dir]` | lista los artefactos de planeacion a cargar |
+| `vendors` | muestra las versiones pineadas |
+| `dashboard` / `ui` | dashboard web multi-proyecto |
+
+### `init` / `new` / `adopt`
+
+```bash
+npx un-specweaver init [dir] [--agents <ids>] [--lang es|en]
+  [--engram-scope project|global] [--graphify auto|off]
+  [--dry-run] [--yes] [--force] [--prune-extra] [--keep-vendor-commands]
+  [--only <pasos>] [--skip <pasos>] [--keep-going]
+```
+
+- `new` equivale a `init --yes`; `adopt` equivale a `init --yes --force`.
+- `--agents`: cuales configurar (por defecto los autodetectados).
+- `--engram-scope project|global`: memoria aislada por proyecto o una sola para todo.
+- `--graphify auto|off`: usar el mapa del codigo si esta instalado.
+- `--prune-extra`: poda tambien los opcionales (el SDD queda unico dueno de los tests).
+- `--keep-vendor-commands`: conserva `/sdd-*` y `/opsx:*` (por defecto se ocultan).
+- `--only` / `--skip`: pasos coma-separados; `--keep-going` no se detiene en el primer fallo.
+- `--dry-run` seguis leyendo abajo: imprime el plan exacto sin ejecutar nada.
 
 **`--dry-run` imprime el plan exacto** — cada comando, cada archivo, cada borrado — sin ejecutar
 nada. El plan y la ejecucion salen del mismo codigo, asi que no puede mentir.
+
+### `update`
+
+```bash
+npx un-specweaver update [dir] [--agents <ids>] [--lang es|en] [--vendors] [--dry-run]
+```
+
+Reconcilia comandos `/sw:*`, skills y `.gitignore` sin tocar arquitectura ni especificaciones.
+`--vendors` reconcilia tambien dependencias upstream (BMAD, OpenSpec, Gentle-AI).
+
+### `doctor`
+
+```bash
+npx un-specweaver doctor [dir] [--fix] [--lang es|en]
+```
+
+Revisa salud, pasos pendientes y drift de vendors. `--fix` corre `init --yes` primero y
+despues reporta. Pensado para CI: sale **0** si esta todo bien y **1** si hay deriva de
+vendors o pasos que bloquean la planeacion.
+
+```bash
+npx un-specweaver doctor || echo "proyecto enfermo"
+```
+
+### `bridge`
+
+```bash
+npx un-specweaver bridge [epics.md] [--out <dir>] [--only 1.2] [--epic 1]
+  [--dry-run] [--force] [--strict] [--lang es|en] [--normative shall|debe]
+```
+
+Convierte stories de BMAD en changes de OpenSpec, deterministico: mismo `epics.md`, mismo
+output, siempre. Sin ruta busca `epics.md` solo (config de BMAD incluida); si hay varios te
+pide que elijas. Escribe `openspec/changes/e{N}s{M}-<slug>/`, `.un-specweaver/trace.json` y
+`.un-specweaver/sprint-plan.md`; omite changes que ya existen salvo `--force`.
+`--strict` aborta si el parser emitio avisos. `--normative debe` lee mejor en espanol pero
+`openspec validate --strict` lo rechaza (ver Decisiones no obvias).
+
+> `bridge` reenvia sus flags verbatim al puente, asi que **no tiene `--help` propio**:
+> `bridge --help` responde `Opcion desconocida` y sale 2.
+
+### `sprint` / `sync` / `build`
+
+```bash
+npx un-specweaver sprint [dir]     # olas de trabajo en paralelo desde epics.md
+npx un-specweaver sync [dir]       # bridge si hay epics; si no, doctor
+npx un-specweaver build [flags]    # valida specs o corre bridge con tus flags
+```
+
+- `sprint` sin `epics.md` avisa y sale 0.
+- `build` con `epics.md` corre `bridge <epics> [tus flags]` (`--strict` por defecto); sin
+  epics valida con `bridge --strict`.
+
+### `change` / `bug` / `ticket`
+
+Atajos que imprimen que hacer en tu agente (`/opsx-propose`, `/sw:ticket`). Siempre salen 0;
+el trabajo real pasa en el agente, no en el CLI.
+
+### `context` / `vendors`
+
+```bash
+npx un-specweaver context [dir]    # artefactos a cargar antes de diseñar o construir
+npx un-specweaver vendors          # pin actual: bmad, openspec, gentle
+```
+
+- `context` lista briefs, PRDs, arquitectura, disenos UX y epics; sin artefactos te manda a
+  `/sw:new`.
+- Para subir un vendor: edita `src/vendors.json`, publica, y `doctor` reporta el drift.
+
+### `dashboard` / `ui`
+
+```bash
+npx un-specweaver dashboard [--port 3100] [--host 127.0.0.1] [--open | --no-open]
+npx un-specweaver ui --port 3200 --open
+```
+
+Inicia el servidor en puerto libre (default 3100, reintenta hasta 10), sirve la SPA en `/`.
+`--port 0` pide puerto efimero; `--open` abre el navegador sin bloquear (`--no-open` por
+defecto). `--help` / `-h` y `--version` / `-v` tambien valen aqui.
+
+### Codigos de salida
+
+| Codigo | Cuando |
+|---|---|
+| 0 | todo bien — incluye `--version`, `<comando> --help`, `dashboard --help` y `sprint` sin epics |
+| 1 | `doctor` con deriva o bloqueo; `bridge --strict` con avisos o ciclos; `dashboard` que no arranca; `--help` sin comando |
+| 2 | comando o flag desconocido — incluye `bridge --help` |
 
 ### Que hace `init`
 
