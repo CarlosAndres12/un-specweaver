@@ -211,7 +211,8 @@ test('S2.2-2.1 — GIVEN proyecto proj-1 path /abs/repo-a WHEN POST /api/project
       assert.equal(closes.length, 1, 'debe recibir COMMAND_CLOSE');
       assert.equal(closes[0].executionId, execId);
       assert.ok(typeof closes[0].exitCode === 'number' || closes[0].exitCode === null, 'exitCode debe ser number o null');
-      assert.equal(closes[0].exitCode, 0, 'exitCode debe ser 0 para doctor corto');
+      // doctor contract: nonzero on plan-blocking steps (uninitialized fixture → blockingPlan>0)
+      assert.equal(closes[0].exitCode, 1, 'exitCode debe ser 1 para doctor en fixture no inicializado');
 
       // Verificar que no se usó process.chdir (AD-01)
       const runnerSrc = fs.readFileSync(path.resolve(import.meta.dirname, '../src/dashboard/command-runner.mjs'), 'utf8');
@@ -274,8 +275,9 @@ test('S2.2-2.2 — GIVEN ejecucion activa WHEN GET /stream SSE THEN chunks COMMA
       assert.ok(r2.outputs.length > 0, 'sub2 debe recibir outputs');
       assert.equal(r1.closes.length, 1, 'sub1 debe recibir close');
       assert.equal(r2.closes.length, 1, 'sub2 debe recibir close');
-      assert.equal(r1.closes[0].exitCode, 0);
-      assert.equal(r2.closes[0].exitCode, 0);
+      // doctor contract: nonzero on plan-blocking steps (uninitialized fixture → blockingPlan>0)
+      assert.equal(r1.closes[0].exitCode, 1);
+      assert.equal(r2.closes[0].exitCode, 1);
 
       // Mismos datos: comparar chunks en orden
       const chunks1 = r1.outputs.map(o => o.stream + ':' + o.chunk);
@@ -695,7 +697,7 @@ test('SSE headers para command stream son tipados (text/event-stream, no-cache, 
   });
 });
 
-test('S2.2-2.5 — GIVEN runner con comandos reales WHEN ejecutar doctor, sprint y change THEN emite chunks reales y exitCode 0', async () => {
+test('S2.2-2.5 — GIVEN runner con comandos reales WHEN ejecutar doctor, sprint y change THEN emite chunks reales y doctor exitCode 1 on uninitialized fixture', async () => {
   await withIsolatedHome(async () => {
     const repo = makeTempProject('repo-real-cmds-');
     // Escribir estructura básica para sprint
@@ -721,7 +723,8 @@ test('S2.2-2.5 — GIVEN runner con comandos reales WHEN ejecutar doctor, sprint
       assert.equal(docRes.res.status, 202);
       const sseDoc = await collectSSE({ port, projectId: pid, execId: docRes.json.executionId, timeoutMs: 3000 });
       assert.ok(sseDoc.outputs.length > 0);
-      assert.equal(sseDoc.closes[0].exitCode, 0);
+      // doctor contract: nonzero on plan-blocking steps (uninitialized fixture → blockingPlan>0)
+      assert.equal(sseDoc.closes[0].exitCode, 1);
       const outDoc = sseDoc.outputs.map(o => o.chunk).join('');
       assert.match(outDoc, /doctor|salud|pasos|node/i);
 
