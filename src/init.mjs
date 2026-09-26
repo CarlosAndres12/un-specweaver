@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
-import { VENDORS, preflight, detectAgents, detectGraphify, detectEngram, isGitRepo, writeState, readState, which } from './env.mjs';
+import { VENDORS, preflight, detectAgents, detectEngram, isGitRepo, writeState, readState, which } from './env.mjs';
 import { buildPlan } from './steps.mjs';
 import { runPlan } from './run.mjs';
 import { t, LANGS } from './i18n.mjs';
@@ -9,24 +9,22 @@ import { resolvePrefs, promptPrefs, promptAgents, validateFlag, DEFAULTS } from 
 
 export { resolvePrefs, promptPrefs } from './prefs.mjs';
 
-function reportOptional(root, lang, prefs = DEFAULTS) {
+// Lo que NO es un paso de init pero el flujo necesita saber: Engram lo instala Gentle-AI y
+// puede quedar bloqueado por confianza de Homebrew. Se reporta aparte, con su remedio.
+function reportOptional(root, lang) {
   console.log(t(lang, 'doctor.optional'));
   const line = (key, ok, detail) =>
     console.log(`  ${t(lang, ok ? 'ok' : 'warn')}  ${t(lang, `${key}.name`).padEnd(14)} ${detail}`);
 
-  const g = prefs.graphify === 'off' ? { available: false, where: null, graph: null, disabled: true } : detectGraphify(root);
-  if (g.disabled) line('graphify', false, t(lang, 'graphify.disabled'));
-  else line('graphify', g.available, g.available
-    ? `${t(lang, 'graphify.present', g.where)} — ${g.graph ? t(lang, 'graphify.graph', g.graph) : t(lang, 'graphify.noGraph')}`
-    : t(lang, 'graphify.absent'));
-
+  // La memoria SIEMPRE se segmenta por proyecto. Sin el binding, engram autodetecta por
+  // git remote (funciona, verificado en 1.20), pero el nombre lo decide cada servidor
+  // y no queda escrito en el repo: se reporta como pendiente, no como roto.
   const e = detectEngram(root);
-  const wantGlobal = prefs.engramScope === 'global';
-  line('engram', e.available && (!!e.project || wantGlobal), e.available
-    ? `${t(lang, 'engram.present', e.bin)} — ${e.project ? t(lang, 'engram.scoped', e.project) : t(lang, wantGlobal ? 'engram.globalByChoice' : 'engram.shared')}`
+  line('engram', e.available && !!e.project, e.available
+    ? `${t(lang, 'engram.present', e.bin)} — ${e.project ? t(lang, 'engram.scoped', e.project) : t(lang, 'engram.unbound')}`
     : t(lang, 'engram.absent'));
 
-  return { graphify: g, engram: e };
+  return { engram: e };
 }
 
 export async function init(opts) {
@@ -34,7 +32,7 @@ export async function init(opts) {
   fs.mkdirSync(root, { recursive: true });
 
   const prior = readState(root);
-  const flags = { lang: opts.lang, engramScope: opts.engramScope, graphify: opts.graphify };
+  const flags = { lang: opts.lang };
   for (const [k, v] of Object.entries(flags)) {
     const err = validateFlag(k, v);
     if (err) { console.error(err); return 2; }
@@ -89,7 +87,7 @@ export async function init(opts) {
   if (opts.dryRun) console.log(t(lang, 'init.dryRun'));
   const results = await runPlan(plan, ctx);
 
-  const optional = opts.dryRun ? { graphify: detectGraphify(root), engram: detectEngram(root) } : reportOptional(root, lang, prefs);
+  const optional = opts.dryRun ? { engram: detectEngram(root) } : reportOptional(root, lang);
 
   if (!opts.dryRun) {
     writeState(root, {
@@ -104,6 +102,7 @@ export async function init(opts) {
         bmad: fs.existsSync(path.join(root, '_bmad')) ? `${VENDORS.bmad.npm}@${VENDORS.bmad.version}` : null,
         openspec: fs.existsSync(path.join(root, 'openspec')) ? `${VENDORS.openspec.npm}@${VENDORS.openspec.version}` : null,
         gentle: which(VENDORS.gentle.bin) ? VENDORS.gentle.version : null,
+        graphify: which(VENDORS.graphify.bin) ? `${VENDORS.graphify.pip}@${VENDORS.graphify.version}` : null,
       },
       optional,
       pruned: [...VENDORS.bmad.prune, ...(opts.pruneExtra ? VENDORS.bmad.pruneOptional : [])],
@@ -187,8 +186,8 @@ export async function doctor(opts) {
 
   if (state) {
     console.log(t(lang, 'doctor.vendors'));
-    const now = { bmad: `${VENDORS.bmad.npm}@${VENDORS.bmad.version}`, openspec: `${VENDORS.openspec.npm}@${VENDORS.openspec.version}`, gentle: VENDORS.gentle.version };
-    const present = { bmad: fs.existsSync(path.join(root, '_bmad')), openspec: fs.existsSync(path.join(root, 'openspec')), gentle: !!which(VENDORS.gentle.bin) };
+    const now = { bmad: `${VENDORS.bmad.npm}@${VENDORS.bmad.version}`, openspec: `${VENDORS.openspec.npm}@${VENDORS.openspec.version}`, gentle: VENDORS.gentle.version, graphify: `${VENDORS.graphify.pip}@${VENDORS.graphify.version}` };
+    const present = { bmad: fs.existsSync(path.join(root, '_bmad')), openspec: fs.existsSync(path.join(root, 'openspec')), gentle: !!which(VENDORS.gentle.bin), graphify: !!which(VENDORS.graphify.bin) };
     for (const [k, v] of Object.entries(now)) {
       const had = state.vendors?.[k];
       if (present[k] && had !== v) drifted = true;
@@ -198,7 +197,7 @@ export async function doctor(opts) {
     }
   }
 
-  reportOptional(root, lang, prefs);
+  reportOptional(root, lang);
 
   console.log(
     blockingPlan ? t(lang, 'doctor.pendingPlan', blockingPlan)

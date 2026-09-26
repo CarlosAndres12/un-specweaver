@@ -34,6 +34,21 @@ export async function runAction(a, ctx) {
       return { ok: true };
     }
 
+    case 'patch': {
+      if (!fs.existsSync(a.file)) return { ok: true };
+      const before = fs.readFileSync(a.file, 'utf8');
+      // `apply` lanza cuando esperaba poder cambiar algo y no pudo (patron desactualizado
+      // contra lo que el vendor escribio de verdad). Reportar "listo" ahi seria el mismo
+      // fallo silencioso que este action kind existe para evitar.
+      let after;
+      try { after = a.apply(before); }
+      catch (e) { return { ok: false, error: e.message }; }
+      if (after === before) return { ok: true };
+      fs.writeFileSync(a.file, after, 'utf8');
+      console.log(`     ${t(ctx.lang, 'run.patched', path.relative(ctx.root, a.file))}`);
+      return { ok: true };
+    }
+
     case 'rm': {
       // Nunca borrar fuera de la raiz del proyecto, pase lo que pase con los flags.
       const target = path.resolve(a.target);

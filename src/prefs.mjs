@@ -3,19 +3,15 @@
 import readline from 'node:readline/promises';
 import { t } from './i18n.mjs';
 
-export const DEFAULTS = { lang: 'es', engramScope: 'project', graphify: 'auto' };
+export const DEFAULTS = { lang: 'es' };
 
 export const CHOICES = {
   lang: ['es', 'en'],
-  engramScope: ['project', 'global'],
-  graphify: ['auto', 'off'],
 };
 
 // Cada pregunta: la respuesta vacia toma el default, que va primero.
 const QUESTIONS = [
   { key: 'lang', options: ['es', 'en'], aliases: { es: ['1', 'es', 'espanol', 'español'], en: ['2', 'en', 'english', 'ingles'] } },
-  { key: 'engramScope', options: ['project', 'global'], aliases: { project: ['1', 'p', 'proyecto', 'project'], global: ['2', 'g', 'global'] } },
-  { key: 'graphify', options: ['auto', 'off'], aliases: { auto: ['1', 'a', 'auto', 'si', 'yes'], off: ['2', 'o', 'off', 'no'] } },
 ];
 
 export function parseAnswer(key, answer, fallback) {

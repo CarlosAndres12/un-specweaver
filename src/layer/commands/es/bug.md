@@ -33,6 +33,10 @@ Reportar como defecto algo que nunca se especifico convierte el spec en ficcion.
 
 Escribi el test que falla **primero**. Un defecto sin test que lo reproduzca es una hipotesis.
 
+Para ubicar el codigo que implementa el escenario usa el grafo: `graphify query "<que hace el
+escenario>"` y, antes de tocar, `graphify affected "<funcion o archivo>"` para saber que mas
+puede romper la correccion. Si no hay grafo, `graphify update .`; si graphify no esta, dilo.
+
 Si no podes reproducirlo, decilo en vez de arreglar a ciegas.
 
 ## Paso 3 — El change

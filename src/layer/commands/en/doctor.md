@@ -20,10 +20,12 @@ Interpret the output for the user rather than just pasting it:
   pending step as equivalent: doctor's last line already distinguishes the two cases, respect it.
 - `DRIFT` on vendors → what it implies and whether it is urgent (see `/sw:sync`)
 - preflight `FAIL` → blocking, nothing else will work
-- `uv` absent → **not** blocking; BMAD resolves its config without it, just slower
-- the `optional` section → graphify present or absent. Absent is **never** an error:
-  the flow works without a code map, just with less precision. If present but with no graph
-  built, suggest `/graphify .` as an improvement, not a requirement.
+- `uv` absent → **not** blocking for planning; BMAD resolves its config without it, just slower.
+  But `init` needs it (or pipx) to install graphify: if `graphify-bin` is missing, that is why
+- `graphify-bin` / `graphify` missing → block **only** `/sw:build`. Without a graph the code is
+  explored blind; `npx un-specweaver init` fixes it. "configured; the graph appears with the
+  first code" on a new project is correct, not pending
+- the `optional` section → Engram. Absent is **not** an error: rationale goes to `design.md`
 
 ## Step 2 — Flow coherence
 

@@ -58,23 +58,25 @@ rediseñar desde cero lo que ya se decidio, se reviso y se aprobo.
 
 ## Mapa del codigo (graphify)
 
-graphify es **opcional**. Resuelve en este orden y **di cual rama tomaste**:
+graphify es **parte del metodo**, no una capacidad opcional: `init` lo instala, deja la skill en el
+proyecto, acota el grafo a **solo codigo** con `.graphifyignore`, construye el grafo AST y deja un
+hook que lo reconstruye en cada commit. El grafo es el unico testigo de la estructura **real** del
+codigo — no leyo el PRD ni la arquitectura declarada, a proposito.
 
-0. **Lee `.un-specweaver/config.json`.** Si `preferences.graphify` es `"off"`, el usuario decidio
-   no usarlo: salta a la rama 3 aunque este instalado. La preferencia manda sobre la deteccion.
+Resuelve en este orden y **di cual rama tomaste**:
 
-1. **Existe `graphify-out/graph.json`** → consultalo con `/graphify query "<pregunta>"`.
-   No leas archivos a ciegas cuando hay grafo.
-2. **Existe la skill graphify pero no hay grafo** → ofrece construirlo con `/graphify .`
-   antes de seguir. En repos grandes tarda, asi que pregunta en vez de asumir.
-3. **No existe ninguno** → sigue con exploracion normal (Glob/Grep/Read) y **avisa
-   explicitamente que el mapa va a ser menos confiable**.
+1. **Existe `graphify-out/graph.json`** → consultalo: `graphify query "<pregunta>"` para contexto,
+   `graphify affected "<simbolo o archivo>"` para saber que depende de algo, `graphify path "A" "B"`
+   para la ruta entre dos piezas. No leas archivos a ciegas cuando hay grafo.
+2. **No hay grafo pero `graphify` esta en PATH** → constrúyelo: `graphify update .` (AST, segundos,
+   sin LLM). Si el proyecto no tiene codigo todavia, es normal que no exista; sigue.
+3. **`graphify` no esta en PATH** → `npx un-specweaver doctor` dice que falta y `npx un-specweaver init`
+   lo resuelve. Si no se puede ahora, sigue con Glob/Grep/Read y **avisa explicitamente que el
+   mapa va a ser menos confiable**.
 
-El unico error grave aqui es el silencioso: invocar `/graphify`, que no pase nada, y seguir
-como si tuvieras el mapa. `npx un-specweaver doctor` reporta si esta disponible y donde.
-
-Nota: la skill suele vivir en `~/.claude/skills/`, asi que puede estar en Claude Code y no en
-OpenCode. Verifica en el agente donde estas corriendo, no asumas.
+El unico error grave es el silencioso: invocar graphify, que no pase nada, y seguir como si
+tuvieras el mapa. **No amplíes el grafo a docs** (`/graphify .` completo sobre PRD o specs):
+esas capas tienen otro dueño y duplicarlas en el grafo es como empiezan a contradecirse.
 
 ## Paso 3 — Construir contra el spec
 
@@ -110,13 +112,17 @@ Ofrecelas al cerrar, no las impongas.
 2. `npx @fission-ai/openspec validate --all --strict`
 3. Registra las decisiones de implementacion que no son obvias desde el codigo (ver "Memoria" abajo)
 4. `openspec archive <change-id>` cuando este entregado — eso mueve el delta al spec principal
+5. El hook de graphify reconstruye el grafo al commitear. Si no commiteaste todavia, `graphify update .`
+   para que el siguiente change vea el codigo nuevo
 
 ## Memoria de decisiones (Engram)
 
-Engram es **opcional**. `npx un-specweaver doctor` dice si esta disponible, y
-`.un-specweaver/config.json` dice con que alcance: `preferences.engramScope` en `"project"`
-significa que este proyecto no ve la memoria de los demas; en `"global"`, la comparte.
-Si guardas algo sensible de un cliente y el alcance es global, **dilo antes de guardarlo**.
+Engram es **opcional**, y su memoria **siempre esta segmentada por proyecto**: `.engram/config.json`
+fija el nombre bajo el que se guarda y se busca. Lo que guardes aqui no aparece en otros
+proyectos, y lo de otros proyectos no aparece aqui, salvo que pidas explicitamente una busqueda
+cross-proyecto (`all_projects`). No lo hagas por defecto: una memoria de otro proyecto que se
+cuela como si fuera de este es una alucinacion con fuente. Si `mem_current_project` no devuelve
+`project_source: "config"`, el binding falta — corre `npx un-specweaver init` antes de guardar.
 
 - **Si `engram` esta en PATH** → guarda ahi la decision y su razon.
 - **Si no esta** → escribela igual, en `design.md` del change bajo `## Decisions`, y **avisa

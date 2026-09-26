@@ -6,11 +6,12 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { VENDORS, which, gte, vendorIds, preflight, detectAgents, detectGraphify, detectEngram, brewTrusted, brewTapKinds, untrustedItems } from '../src/env.mjs';
 import { runAction, runPlan } from '../src/run.mjs';
-import { engramProject, engramBinding, writeState, readState } from '../src/env.mjs';
+import { engramProject, engramBinding, legacyEngramMcp, gitRemoteName, ENGRAM_CONFIG, writeState, readState } from '../src/env.mjs';
 import { t, keysOf } from '../src/i18n.mjs';
 import { resolvePrefs, parseAnswer, parseAgents, DEFAULTS, CHOICES, validateFlag } from '../src/prefs.mjs';
-import { buildPlan, STEPS, renderAction, renderCommand, commandPath, NAMESPACE, gitignoreBlock, GITIGNORE_START } from '../src/steps.mjs';
+import { buildPlan, STEPS, renderAction, renderCommand, commandPath, NAMESPACE, gitignoreBlock, GITIGNORE_START, graphifyIgnoreBlock, scopeGraphifyHooks } from '../src/steps.mjs';
 import { init, update } from '../src/init.mjs';
+import { GRAPHIFY_IGNORE_START, graphifyIgnoreOk, graphifyHookOk } from '../src/env.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const CLI = path.join(ROOT, 'bin', 'un-specweaver.mjs');
@@ -55,10 +56,11 @@ test('el plan de un proyecto vacio incluye todos los pasos en orden', () => {
   const plan = buildPlan(ctxFor(root));
   // gitignore va primero: si un paso posterior falla, el vendor a medio instalar
   // no puede terminar commiteado por accidente.
-  assert.deepEqual(plan.map((s) => s.id), ['gitignore', 'bmad', 'bmad-prune', 'openspec', 'gentle-bin', 'gentle-config', 'engram-scope', 'surface', 'layer']);
+  assert.deepEqual(plan.map((s) => s.id), ['gitignore', 'bmad', 'bmad-prune', 'openspec', 'gentle-bin', 'gentle-config', 'engram-scope', 'graphify-bin', 'graphify', 'surface', 'layer']);
   // gitignore depende de si hay repo git; gentle-bin depende del PATH de la maquina,
   // no del proyecto. El resto si tiene que estar pendiente en un directorio vacio.
-  const projectScoped = plan.filter((s) => !['gitignore', 'gentle-bin', 'engram-scope'].includes(s.id));
+  // graphify-bin tambien depende del PATH.
+  const projectScoped = plan.filter((s) => !['gitignore', 'gentle-bin', 'engram-scope', 'graphify-bin'].includes(s.id));
   assert.ok(projectScoped.every((s) => s.status.state === 'pending'), 'nada del proyecto puede estar "ok" en un directorio vacio');
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -365,47 +367,171 @@ test('preflight revisa uv como aviso, no como bloqueante', () => {
   assert.equal(uv.fatal, false, 'uv no puede bloquear: las skills de BMAD traen fallback manual');
 });
 
-test('graphify se detecta, no se instala: nunca aparece como paso de init', () => {
+test('graphify es parte del metodo: init lo instala, lo acota a codigo y deja el hook', () => {
+  // VERIFICADO contra graphify 0.8.37: `update` es AST puro (sin LLM, solo extensiones de
+  // codigo; sin codigo termina en exit 0 sin crear graph.json), `install --project` deja la
+  // skill dentro del proyecto y `hook install` es idempotente.
   const root = tmp();
-  const ids = buildPlan(ctxFor(root)).map((s) => s.id);
-  assert.ok(!ids.some((id) => id.includes('graphify')), 'graphify no debe ser un paso instalable');
+  execFileSync('git', ['-C', root, 'init', '-q']);
+  const bin = STEPS.find((s) => s.id === 'graphify-bin');
+  const step = STEPS.find((s) => s.id === 'graphify');
+  assert.equal(step.dependsOn, 'graphify-bin');
+  assert.equal(step.blocks, 'build', 'sin grafo se planea igual; construir es lo que pierde precision');
+
+  const ctx = ctxFor(root);
+  const binActions = bin.plan(ctx);
+  if (which('graphify')) {
+    assert.equal(binActions[0].kind, 'note', 'ya instalado: no se reinstala');
+  } else if (which('uv') || which('pipx')) {
+    const e = binActions[0];
+    assert.equal(e.kind, 'exec');
+    assert.match(e.args.join(' '), new RegExp(`${VENDORS.graphify.pip}==${VENDORS.graphify.version.replace(/\./g, '\\.')}`), 'pineado');
+  } else {
+    assert.equal(binActions[0].kind, 'blocked', 'sin uv ni pipx no se instala con pip sobre el python del sistema');
+  }
+
+  assert.equal(step.status(ctx).state, 'pending');
+  const actions = step.plan(ctx);
+  const ignore = actions.find((a) => a.kind === 'write' && a.file.endsWith(VENDORS.graphify.ignoreFile));
+  assert.ok(ignore, 'debe escribir .graphifyignore');
+  assert.ok(actions.indexOf(ignore) < actions.findIndex((a) => a.kind === 'exec'), 'el alcance se fija ANTES de construir el grafo');
+  for (const pat of ['_bmad-output/', 'openspec/', 'docs/', '*.md', '.engram/', 'graphify-out/'])
+    assert.ok(ignore.content.includes(`\n${pat}\n`), `el grafo no puede incluir ${pat}`);
+
+  const execs = actions.filter((a) => a.kind === 'exec');
+  const installs = execs.filter((a) => a.args[0] === 'install');
+  assert.deepEqual(installs.map((a) => a.args.slice(1)), [['--project', '--platform', 'claude'], ['--project', '--platform', 'opencode']],
+    'skill dentro del proyecto, un comando por agente, con el id que graphify usa');
+  assert.ok(installs.every((a) => a.tolerateFailure), 'un agente que falle no debe impedir los demas');
+  assert.ok(execs.some((a) => a.args[0] === 'update' && a.args[1] === '.'), 'grafo AST inicial');
+  assert.ok(execs.some((a) => a.args[0] === 'hook'), 'con repo git se instala el hook');
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('detectGraphify reporta ausencia sin fallar y encuentra la skill donde este', () => {
-  const root = tmp(), home = tmp();
-  assert.deepEqual(detectGraphify(root, home), { available: false, where: null, graph: null });
+test('los hooks PreToolUse de graphify se acotan a codigo: el PRD y los specs no estan en el grafo', async () => {
+  // Texto real que graphify 0.8.37 escribe en .claude/settings.json (Read|Glob dispara sobre .md).
+  const real = {
+    hooks: { PreToolUse: [
+      { matcher: 'Bash', hooks: [{ type: 'command', command: 'case "$CMD" in *grep*) echo x ;; esac' }] },
+      { matcher: 'Read|Glob', hooks: [{ type: 'command', command: "HIT=$(python3 -c \"...exts=('.py','.js','.ts','.lua','.sh','.md','.rst','.txt','.mdx');sys.stdout.write('1' if 'graphify-out/' not in s and any(e in s for e in exts) else '')\")" }] },
+    ] },
+  };
+  const out = JSON.parse(scopeGraphifyHooks(JSON.stringify(real)));
+  const read = out.hooks.PreToolUse[1].hooks[0].command;
+  assert.doesNotMatch(read, /'\.md'|'\.txt'|'\.rst'/, 'los docs no disparan el hook');
+  assert.match(read, /'\.py','\.js'/, 'el codigo si');
+  for (const dir of ['_bmad-output/', 'openspec/', 'docs/', '.engram/']) assert.ok(read.includes(`'${dir}'`), `${dir} excluida`);
+  assert.equal(out.hooks.PreToolUse[0].hooks[0].command, real.hooks.PreToolUse[0].hooks[0].command, 'el hook de Bash (grep) no se toca');
 
-  fs.mkdirSync(path.join(home, '.claude', 'skills', 'graphify'), { recursive: true });
-  let g = detectGraphify(root, home);
-  assert.equal(g.available, true);
-  assert.match(g.where, /~\/\.claude/);
-  assert.equal(g.graph, null, 'skill presente pero sin grafo construido');
+  // Texto desconocido (version futura): se deja igual, no se rompe.
+  const other = JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Read|Glob', hooks: [{ type: 'command', command: 'algo nuevo' }] }] } });
+  assert.equal(scopeGraphifyHooks(other), other);
+  assert.equal(scopeGraphifyHooks('no es json'), 'no es json');
 
+  // El patch va DESPUES del install que crea el archivo, y sin archivo no hace nada.
+  const root = tmp();
+  const step = STEPS.find((s) => s.id === 'graphify');
+  const actions = step.plan(ctxFor(root, ['claude-code']));
+  const i = actions.findIndex((a) => a.kind === 'exec' && a.args[0] === 'install');
+  const p = actions.findIndex((a) => a.kind === 'patch');
+  assert.ok(p > i, 'el patch sigue al install');
+  assert.ok(actions[p].file.endsWith(path.join('.claude', 'settings.json')));
+  const r = await runAction(actions[p], { root, lang: 'es' });
+  assert.equal(r.ok, true, 'sin settings.json no falla');
+  assert.match(renderAction(actions[p], root), /^~ \.claude\/settings\.json/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('sin repo git graphify no intenta instalar el hook', () => {
+  const root = tmp();
+  const step = STEPS.find((s) => s.id === 'graphify');
+  const actions = step.plan(ctxFor(root));
+  assert.ok(!actions.some((a) => a.kind === 'exec' && a.args[0] === 'hook'));
+  assert.ok(actions.some((a) => a.kind === 'note' && /graphify update/.test(a.text)), 'y dice como reconstruir a mano');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('.graphifyignore es un bloque marcado: preserva lo del usuario y no se duplica', () => {
+  const root = tmp();
+  const step = STEPS.find((s) => s.id === 'graphify');
+  const f = path.join(root, VENDORS.graphify.ignoreFile);
+  fs.writeFileSync(f, 'mi-carpeta-privada/\n');
+  const w = () => step.plan(ctxFor(root)).find((a) => a.kind === 'write' && a.file === f);
+  fs.writeFileSync(f, w().content);
+  assert.ok(graphifyIgnoreOk(root));
+  assert.match(fs.readFileSync(f, 'utf8'), /^mi-carpeta-privada\//m, 'lo del usuario sigue');
+  fs.writeFileSync(f, w().content);
+  assert.equal(fs.readFileSync(f, 'utf8').split(GRAPHIFY_IGNORE_START).length - 1, 1, 'un solo bloque');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('el estado de graphify no exige graph.json: en greenfield no hay codigo que mapear', () => {
+  const root = tmp();
+  execFileSync('git', ['-C', root, 'init', '-q']);
+  const step = STEPS.find((s) => s.id === 'graphify');
+  const ctx = ctxFor(root);
+  if (!which('graphify')) { fs.rmSync(root, { recursive: true, force: true }); return; }
+  fs.writeFileSync(path.join(root, VENDORS.graphify.ignoreFile), graphifyIgnoreBlock());
+  for (const a of ctx.agents) {
+    fs.mkdirSync(path.join(root, a.graphifySkill), { recursive: true });
+    fs.writeFileSync(path.join(root, a.graphifySkill, 'SKILL.md'), '# graphify');
+  }
+  fs.mkdirSync(path.join(root, '.git', 'hooks'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.git', 'hooks', 'post-commit'), '#!/bin/sh\ngraphify update .\n');
+  assert.ok(graphifyHookOk(root));
+  const st = step.status(ctx);
+  assert.equal(st.state, 'ok', st.detail);
+  assert.match(st.detail, /primer codigo|first code/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('detectGraphify mira la ruta de skill que graphify usa para cada agente, no la de BMAD', () => {
+  // graphify install --project deja OpenCode en .opencode/skills, no en .agents/skills.
+  const root = tmp();
+  let g = detectGraphify(root);
+  assert.deepEqual(g.skills.map((x) => [x.id, x.path, x.present]), [['claude-code', '.claude/skills/graphify', false], ['opencode', '.opencode/skills/graphify', false]]);
+  assert.equal(g.graph, null);
+  fs.mkdirSync(path.join(root, '.opencode', 'skills', 'graphify'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.opencode', 'skills', 'graphify', 'SKILL.md'), '');
   fs.mkdirSync(path.join(root, 'graphify-out'), { recursive: true });
   fs.writeFileSync(path.join(root, 'graphify-out', 'graph.json'), '{}');
-  g = detectGraphify(root, home);
+  g = detectGraphify(root);
+  assert.equal(g.skills.find((x) => x.id === 'opencode').present, true);
   assert.equal(g.graph, path.join('graphify-out', 'graph.json'));
-
   fs.rmSync(root, { recursive: true, force: true });
-  fs.rmSync(home, { recursive: true, force: true });
 });
 
-test('los comandos que usan graphify declaran las tres ramas, no lo asumen', () => {
-  for (const lang of ['es', 'en'])
+test('el gitignore ignora el grafo y las skills de graphify, pero no .graphifyignore', () => {
+  const block = gitignoreBlock();
+  assert.match(block, /^graphify-out\/$/m, 'AST regenerable, y el hook lo reescribe en cada commit');
+  for (const d of ['.claude/skills', '.opencode/skills', '.agents/skills']) assert.ok(block.includes(`${d}/graphify/`), d);
+  assert.ok(!/^\.graphifyignore/m.test(block), 'la regla del equipo va al repo');
+  assert.match(block, /\.graphifyignore/, 'y se dice explicitamente');
+});
+
+test('los comandos que usan graphify declaran las tres ramas y prohiben ampliarlo a docs', () => {
+  for (const lang of ['es', 'en']) {
     for (const name of ['adopt', 'build']) {
       const src = fs.readFileSync(path.join(LAYER, 'commands', lang, `${name}.md`), 'utf8');
       assert.match(src, /graphify-out\/graph\.json/, `${lang}/${name}: no revisa si hay grafo`);
-      assert.match(src, /\/graphify \./, `${lang}/${name}: no ofrece construirlo`);
+      assert.match(src, /graphify update \./, `${lang}/${name}: no dice como construirlo`);
       assert.match(src, lang === 'es' ? /menos confiable/ : /less reliable/, `${lang}/${name}: no declara la degradacion`);
+      assert.match(src, lang === 'es' ? /No ampl/ : /Do not widen/, `${lang}/${name}: debe prohibir el grafo sobre docs`);
     }
+    // change y bug miden impacto y localizan con el grafo: es para lo que existe.
+    for (const name of ['change', 'bug']) {
+      const src = fs.readFileSync(path.join(LAYER, 'commands', lang, `${name}.md`), 'utf8');
+      assert.match(src, /graphify affected/, `${lang}/${name}: debe medir impacto real`);
+    }
+  }
 });
 
-test('la skill declara graphify como opcional en los dos idiomas', () => {
+test('la skill declara graphify como parte del metodo y solo de codigo', () => {
   for (const lang of ['es', 'en']) {
     const skill = fs.readFileSync(path.join(LAYER, 'skills', 'un-specweaver', `SKILL.${lang}.md`), 'utf8');
-    assert.match(skill, /graphify/);
-    assert.match(skill, lang === 'es' ? /se detecta, no se instala/ : /detected, not installed/);
+    assert.match(skill, lang === 'es' ? /parte del metodo/ : /part of the method/);
+    assert.match(skill, /\.graphifyignore/);
+    assert.doesNotMatch(skill, lang === 'es' ? /se detecta, no se instala/ : /detected, not installed/);
   }
 });
 
@@ -551,14 +677,16 @@ test('Engram se trata como capacidad opcional, no se asume', () => {
   }
 });
 
-test('detectEngram no explota y reporta el store del proyecto', () => {
+test('detectEngram no explota y reporta el proyecto atado', () => {
   const root = tmp();
   let e = detectEngram(root);
-  assert.equal(e.store, null);
+  assert.equal(e.project, null);
+  assert.equal(e.legacyMcp, false);
   assert.equal(typeof e.available, 'boolean');
   fs.mkdirSync(path.join(root, '.engram'), { recursive: true });
+  fs.writeFileSync(path.join(root, ENGRAM_CONFIG), JSON.stringify({ project_name: 'Demo' }));
   e = detectEngram(root);
-  assert.equal(e.store, '.engram');
+  assert.equal(e.project, 'demo', 'engram normaliza a minusculas; se reporta igual');
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -798,42 +926,73 @@ test('las rutas de poda caen dentro del proyecto, tambien con agentes detectados
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('la memoria de Engram se ata al proyecto: sin eso se mezcla entre proyectos', async () => {
-  // VERIFICADO en una maquina real: engram usa una sola base para todo, el aislamiento por
-  // --project funciona, pero la deteccion por directorio NO. Una memoria sin --project queda
-  // huerfana y aparece en cualquier busqueda. Gentle-AI configura el MCP global sin --project.
+test('la memoria de Engram se segmenta por proyecto con .engram/config.json', () => {
+  // VERIFICADO contra engram 1.20: .engram/config.json es el caso 0 de su deteccion de
+  // proyecto y lo honran todos sus servidores MCP (plugin de Claude Code, global de Gentle-AI,
+  // OpenCode, CLI). Registrar un segundo servidor con --project en .mcp.json duplicaba las
+  // herramientas de memoria en Claude Code y OpenCode ni lo leia.
   const root = tmp();
   const step = STEPS.find((s) => s.id === 'engram-scope');
-  const st = step.status(ctxFor(root));
-  if (st.state === 'skip') { fs.rmSync(root, { recursive: true, force: true }); return; }
+  assert.equal(step.status(ctxFor(root)).state, 'pending', 'siempre se ata, haya o no binario');
 
-  const [action] = step.plan(ctxFor(root));
+  const actions = step.plan(ctxFor(root));
+  assert.equal(actions.length, 1, 'sin legado, una sola escritura');
+  const [action] = actions;
   assert.equal(action.kind, 'write');
-  assert.ok(action.file.endsWith('.mcp.json'));
-  const j = JSON.parse(action.content);
-  assert.deepEqual(j.mcpServers.engram.args.slice(0, 2), ['mcp', '--tools=agent']);
-  assert.equal(j.mcpServers.engram.args[j.mcpServers.engram.args.indexOf('--project') + 1], engramProject(root));
+  assert.ok(action.file.endsWith(path.join('.engram', 'config.json')));
+  assert.deepEqual(JSON.parse(action.content), { project_name: engramProject(root) });
+
+  fs.mkdirSync(path.dirname(action.file), { recursive: true });
+  fs.writeFileSync(action.file, action.content);
+  assert.equal(step.status(ctxFor(root)).state, 'ok', 'despues de escribirlo, esta al dia');
+  assert.equal(engramBinding(root), engramProject(root));
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('atar engram preserva los otros servidores MCP del proyecto', () => {
+test('el servidor engram --project de la version anterior se retira sin tocar los demas', () => {
   const root = tmp();
   const step = STEPS.find((s) => s.id === 'engram-scope');
-  if (step.status(ctxFor(root)).state === 'skip') { fs.rmSync(root, { recursive: true, force: true }); return; }
+  fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: {
+    context7: { command: 'npx', args: ['-y', 'ctx7'] },
+    engram: { command: 'engram', args: ['mcp', '--tools=agent', '--project', 'viejo'] },
+  } }));
+  assert.equal(legacyEngramMcp(root), 'viejo');
+  assert.match(step.status(ctxFor(root)).detail, /migrar/);
 
-  fs.writeFileSync(path.join(root, '.mcp.json'),
-    JSON.stringify({ mcpServers: { context7: { command: 'npx', args: ['-y', 'ctx7'] } } }));
-  const j = JSON.parse(step.plan(ctxFor(root))[0].content);
+  const actions = step.plan(ctxFor(root));
+  const mcp = actions.find((a) => a.kind === 'write' && a.file.endsWith('.mcp.json'));
+  assert.ok(mcp, 'debe reescribir .mcp.json');
+  const j = JSON.parse(mcp.content);
   assert.ok(j.mcpServers.context7, 'no puede borrar servidores que ya estaban');
-  assert.equal(j.mcpServers.context7.command, 'npx');
-  assert.ok(j.mcpServers.engram, 'y debe agregar el suyo');
+  assert.equal(j.mcpServers.engram, undefined, 'y debe quitar solo el suyo');
+  assert.ok(actions.some((a) => a.kind === 'note' && /plugin/i.test(a.text)), 'explica por que se retira');
+
+  // Un .mcp.json con engram SIN --project no es nuestro (lo pudo escribir Gentle-AI): no se toca.
+  fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: {
+    engram: { command: 'engram', args: ['mcp', '--tools=agent'] },
+  } }));
+  assert.equal(legacyEngramMcp(root), null);
+  assert.ok(!step.plan(ctxFor(root)).some((a) => a.kind === 'write' && a.file.endsWith('.mcp.json')));
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('el nombre de proyecto de Engram es estable y seguro', () => {
+test('el nombre de proyecto de Engram coincide con el que engram autodetecta', () => {
+  // Sin repo, carpeta en forma segura.
   assert.equal(engramProject('/a/b/LandingPageJSMR'), 'landingpagejsmr');
   assert.equal(engramProject('/a/b/un-specweaver-web'), 'un-specweaver-web');
   assert.equal(engramProject('/a/b/Mi Proyecto 2026'), 'mi-proyecto-2026');
+
+  // Con remote, el nombre del repo tal como lo deriva engram (extractRepoName + lowercase):
+  // asi las memorias guardadas ANTES de init quedan bajo la misma etiqueta.
+  const root = tmp();
+  execFileSync('git', ['-C', root, 'init', '-q']);
+  assert.equal(gitRemoteName(root), null, 'sin origin no hay nombre de remote');
+  execFileSync('git', ['-C', root, 'remote', 'add', 'origin', 'git@github.com:Acme/Backend_API.git']);
+  assert.equal(gitRemoteName(root), 'backend_api');
+  assert.equal(engramProject(root), 'backend_api', 'gana el remote sobre la carpeta');
+  execFileSync('git', ['-C', root, 'remote', 'set-url', 'origin', 'https://github.com/acme/web-app']);
+  assert.equal(engramProject(root), 'web-app');
+  fs.rmSync(root, { recursive: true, force: true });
 });
 
 // --- preferencias del proyecto -------------------------------------------------
@@ -846,70 +1005,76 @@ test('las preferencias respetan flag > guardado > pregunta > default', async () 
 
   // Con las otras dos ya guardadas, no queda nada que preguntar y el flag pisa lo guardado.
   const flagGana = await resolvePrefs(
-    { flags: { lang: 'en' }, stored: { lang: 'es', engramScope: 'project', graphify: 'auto' }, isTTY: true },
+    { flags: { lang: 'en' }, stored: { lang: 'es' }, isTTY: true },
     never,
   );
   assert.equal(flagGana.prefs.lang, 'en', 'el flag manda sobre lo guardado');
 
+  // Un config.json de 0.1.x/0.2.x traia engramScope y graphify; se ignoran sin romper nada.
   const guardado = await resolvePrefs({ stored: { lang: 'en', engramScope: 'global', graphify: 'off' }, isTTY: true }, never);
-  assert.deepEqual(guardado.prefs, { lang: 'en', engramScope: 'global', graphify: 'off' }, 'reinstalar no vuelve a preguntar');
+  assert.deepEqual(guardado.prefs, { lang: 'en' }, 'reinstalar no vuelve a preguntar');
 });
 
 test('solo pregunta lo que falta, no todo de nuevo', async () => {
   let preguntadas = null;
   const r = await resolvePrefs(
-    { flags: { lang: 'en' }, stored: { graphify: 'off' }, isTTY: true },
-    async (keys) => { preguntadas = keys; return { engramScope: '2' }; },
+    { isTTY: true },
+    async (keys) => { preguntadas = keys; return { lang: '2' }; },
   );
-  assert.deepEqual(preguntadas, ['engramScope'], 'lang venia por flag y graphify guardado');
-  assert.equal(r.prefs.engramScope, 'global');
+  assert.deepEqual(preguntadas, ['lang'], 'lo unico que queda por preguntar');
+  assert.equal(r.prefs.lang, 'en');
 });
 
 test('las respuestas aceptan formas razonables y caen al default', () => {
   for (const a of ['2', 'en', 'EN', 'English', ' ingles ']) assert.equal(parseAnswer('lang', a, 'es'), 'en', a);
   for (const a of ['1', 'es', 'espanol', '', 'cualquier cosa']) assert.equal(parseAnswer('lang', a, 'es'), 'es', a);
-  for (const a of ['2', 'g', 'global']) assert.equal(parseAnswer('engramScope', a, 'project'), 'global', a);
-  for (const a of ['2', 'off', 'no']) assert.equal(parseAnswer('graphify', a, 'auto'), 'off', a);
 });
 
 test('un valor invalido en un flag se rechaza en vez de aceptarse a medias', () => {
   assert.equal(validateFlag('lang', 'es'), null);
   assert.match(validateFlag('lang', 'fr'), /--lang/);
-  assert.match(validateFlag('engramScope', 'compartido'), /--engramScope/);
-  assert.equal(validateFlag('graphify', undefined), null, 'ausente no es invalido');
+  assert.equal(validateFlag('lang', undefined), null, 'ausente no es invalido');
   for (const [k, vals] of Object.entries(CHOICES))
     assert.ok(vals.includes(DEFAULTS[k]), `el default de ${k} debe ser una opcion valida`);
 });
 
-test('engramScope global salta el paso de aislamiento en vez de contradecirlo', () => {
-  const root = tmp();
+test('la segmentacion de Engram no es una preferencia: no se pregunta ni se puede apagar', () => {
+  assert.equal(DEFAULTS.engramScope, undefined);
+  assert.equal(CHOICES.engramScope, undefined);
   const step = STEPS.find((s) => s.id === 'engram-scope');
-  const global = step.status({ ...ctxFor(root), prefs: { ...DEFAULTS, engramScope: 'global' } });
-  assert.equal(global.state, 'skip', 'si elegiste memoria global, no se ata al proyecto');
+  const root = tmp();
+  assert.notEqual(step.status({ ...ctxFor(root), prefs: { engramScope: 'global' } }).state, 'skip',
+    'un config.json viejo con engramScope:global ya no desactiva el paso');
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('los comandos consultan las preferencias antes de decidir por su cuenta', () => {
-  // Hueco real: las preferencias existian en config.json pero los comandos decidian por
-  // existencia de archivos. Con graphify:"off" lo usaban igual.
+test('graphify no es una preferencia: ningun comando la consulta ni init la pregunta', () => {
+  assert.equal(DEFAULTS.graphify, undefined);
+  assert.equal(CHOICES.graphify, undefined);
   for (const lang of ['es', 'en']) {
-    for (const f of ['build', 'adopt']) {
-      const src = fs.readFileSync(path.join(LAYER, 'commands', lang, `${f}.md`), 'utf8');
-      assert.match(src, /\.un-specweaver\/config\.json/, `${lang}/${f}: debe leer la config`);
-      assert.match(src, /preferences\.graphify/, `${lang}/${f}: debe consultar la preferencia`);
+    for (const f of fs.readdirSync(path.join(LAYER, 'commands', lang))) {
+      const src = fs.readFileSync(path.join(LAYER, 'commands', lang, f), 'utf8');
+      assert.doesNotMatch(src, /preferences\.graphify/, `${lang}/${f}`);
     }
     const skill = fs.readFileSync(path.join(LAYER, 'skills', 'un-specweaver', `SKILL.${lang}.md`), 'utf8');
-    assert.match(skill, /preferences/, `SKILL.${lang}: debe declarar la regla`);
     assert.match(skill, lang === 'es' ? /Nunca preguntes estas cosas/ : /Never ask about these/,
       `SKILL.${lang}: las preferencias no se re-preguntan en conversacion`);
   }
 });
 
-test('engramScope global se advierte antes de guardar, no despues', () => {
+test('los comandos declaran que la memoria es por proyecto y prohiben cruzarla por defecto', () => {
+  // El riesgo es el agente leyendo memoria de OTRO proyecto como si fuera de este:
+  // una alucinacion con fuente. Se dice en los comandos que guardan y en la skill.
   for (const lang of ['es', 'en']) {
-    const src = fs.readFileSync(path.join(LAYER, 'commands', lang, 'build.md'), 'utf8');
-    assert.match(src, /engramScope/, `${lang}: debe consultar el alcance`);
-    assert.match(src, lang === 'es' ? /dilo antes de guardarlo/ : /say so first/, `${lang}: aviso previo`);
+    for (const f of ['build', 'change']) {
+      const src = fs.readFileSync(path.join(LAYER, 'commands', lang, `${f}.md`), 'utf8');
+      assert.match(src, /\.engram\/config\.json/, `${lang}/${f}: debe nombrar el binding`);
+      assert.match(src, /all_projects/, `${lang}/${f}: debe nombrar el unico modo que cruza`);
+      assert.doesNotMatch(src, /engramScope/, `${lang}/${f}: la preferencia ya no existe`);
+    }
+    const skill = fs.readFileSync(path.join(LAYER, 'skills', 'un-specweaver', `SKILL.${lang}.md`), 'utf8');
+    assert.match(skill, /\.engram\/config\.json/, `SKILL.${lang}: debe nombrar el binding`);
+    assert.doesNotMatch(skill, /engramScope/, `SKILL.${lang}`);
   }
 });
 

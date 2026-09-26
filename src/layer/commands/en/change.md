@@ -24,6 +24,11 @@ Read `.un-specweaver/trace.json` and `_bmad-output/prd.md`. Classify the require
 State the classification out loud, citing the specific FR or story that backs it. If torn between
 two, pick the more restrictive one and explain why.
 
+**Measure the impact on the real code, not the imagined one.** If `graphify-out/graph.json` exists,
+run `graphify affected "<module or symbol the requirement touches>"` and report what depends on it:
+an "in scope" that drags five modules along is not that in scope. If there is no graph,
+`graphify update .` builds it in seconds; if graphify is missing, say so and carry on.
+
 **Do not move to Step 2 without user confirmation for anything other than "in scope".**
 
 ## Step 2 — Update the source document, not the derived one
@@ -54,10 +59,12 @@ npx @fission-ai/openspec validate --all --strict
 
 ## Step 5 — Record the why
 
-Engram is **optional**. `npx un-specweaver doctor` says whether it is available, and
-`.un-specweaver/config.json` says at what scope: `preferences.engramScope` set to `"project"`
-means this project cannot see other projects' memory; set to `"global"`, it shares it.
-If you are about to store something sensitive from a client and the scope is global, **say so first**.
+Engram is **optional**, and its memory is **always scoped per project**: `.engram/config.json`
+pins the name it saves under and searches in. What you store here does not show up in other
+projects, and theirs does not show up here, unless you explicitly ask for a cross-project search
+(`all_projects`). Do not do that by default: another project's memory slipping in as if it were
+this one's is a hallucination with a citation. If `mem_current_project` does not return
+`project_source: "config"`, the binding is missing — run `npx un-specweaver init` before saving.
 
 - **If `engram` is on PATH** → store the decision and its reason there.
 - **If it is not** → write it anyway, in the change's `design.md` under `## Decisions`, and

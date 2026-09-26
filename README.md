@@ -90,20 +90,26 @@ las pinea a una version conocida, y aporta la pieza que a ninguna le sobraba.
 | **Traducir** | **el puente de este repositorio** |
 | Contratos y verificacion | [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
 | Construccion, revision, memoria | [Gentle-AI](https://github.com/Gentleman-Programming/gentle-ai) + Engram |
+| Mapa del codigo (impacto, estructura real) | [graphify](https://github.com/safishamsi/graphify) — **solo codigo** |
 
 **La fase 4 es la que no existia.** BMAD llega hasta la historia; OpenSpec arranca en el contrato;
 entre las dos habia un salto que se hacia a mano o se improvisaba. El puente lo cierra de forma
 deterministica: mismo `epics.md`, mismos contratos, byte por byte, con la trazabilidad
 requisito ↔ historia ↔ contrato escrita en un archivo.
 
-Ademas la herramienta hace tres cosas que suenan menores y no lo son:
+Ademas la herramienta hace cuatro cosas que suenan menores y no lo son:
 
 - **Poda lo que se pisa.** Dos herramientas del stack traen agentes constructores; si conviven,
   compiten por el mismo archivo. Se remueven en la instalacion, no con una regla que un agente
   pueda ignorar.
 - **Deja un solo vocabulario.** Los comandos de los vendors se ocultan; queda `/sw:*`. Las skills
   utiles siguen todas disponibles.
-- **Aisla la memoria por proyecto.** Por defecto se comparte entre proyectos; aqui se ata a este.
+- **Segmenta la memoria por proyecto.** Escribe `.engram/config.json` con el nombre del proyecto,
+  que es lo que todos los servidores de Engram respetan. No es una opcion: siempre pasa.
+- **Acota el mapa del codigo a codigo.** graphify construye un grafo AST del proyecto —
+  determinista, sin LLM— y un hook lo reconstruye en cada commit. `.graphifyignore` deja fuera el
+  PRD, los specs y la memoria: esas capas tienen otro dueño, y el grafo tiene que ser un testigo
+  que no leyo la arquitectura declarada para poder contrastarla con la real.
 
 Nada se forkea. Los vendors se actualizan solos y el pin vive en un unico archivo.
 
@@ -122,7 +128,7 @@ de paquetes del sistema y un permiso de Homebrew que aplica solo a macOS.
 | 2 | **Claude Code** u **OpenCode** (al menos uno) | **si** |
 | 3 | Homebrew — **solo macOS** | si, para Gentle-AI |
 | 4 | git | no, pero sin el no podes revertir |
-| 5 | `uv` (Python) | no, solo hace mas lento a BMAD |
+| 5 | `uv` (o `pipx`) | **solo `/sw:build`**: es como se instala graphify. Sin el, BMAD tambien va mas lento |
 
 ---
 
@@ -170,7 +176,7 @@ npm install -g opencode-ai                  # OpenCode
 
 Con uno alcanza. Si instalas los dos, `init` te deja elegir cuales configurar.
 
-### Paso 3 — Opcional: `uv`
+### Paso 3 — `uv` (o `pipx`)
 
 ```bash
 # macOS
@@ -180,7 +186,10 @@ brew install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-BMAD lo usa para resolver su configuracion. Sin el funciona igual, solo mas lento.
+`init` lo usa para instalar graphify aislado en su propio entorno de Python (con `pipx` tambien
+sirve; sobre el Python del sistema con `pip`, no lo hace por vos). BMAD ademas lo usa para
+resolver su configuracion. Sin ninguno de los dos, planear funciona; construir se queda sin mapa
+del codigo y `doctor` lo dice.
 
 ### Paso 4 — Comprobar antes de seguir
 
@@ -188,6 +197,7 @@ BMAD lo usa para resolver su configuracion. Sin el funciona igual, solo mas lent
 node --version      # v20.11.0 o superior
 claude --version    # o: opencode --version
 git --version
+uv --version        # o: pipx --version
 brew --version      # solo macOS
 ```
 
@@ -201,8 +211,8 @@ cd mi-proyecto
 npx un-specweaver init
 ```
 
-Hace cuatro preguntas —idioma, alcance de la memoria, graphify y que agentes configurar— y
-despues instala BMAD, inicializa OpenSpec y configura Gentle-AI. Tarda unos minutos.
+Hace dos preguntas —idioma y que agentes configurar— y despues instala BMAD, inicializa OpenSpec,
+configura Gentle-AI, segmenta la memoria de Engram y monta graphify. Tarda unos minutos.
 
 **En macOS se va a detener una vez** pidiendo autorizar un tap de Homebrew: Gentle-AI instala
 Engram y GGA desde un tap de terceros, y brew se niega a cargar formulas no confiables.
@@ -224,22 +234,19 @@ detecta tu gestor de paquetes. Va a pedir confirmacion antes de ejecutar el scri
 
 ---
 
-### Las cuatro preguntas de `init`
+### Las dos preguntas de `init`
 
 Se hacen **una sola vez** y quedan en `.un-specweaver/config.json`:
 
 | Pregunta | Opciones | Recomendado |
 |---|---|---|
 | Idioma | Espanol / English | el del equipo |
-| Memoria de Engram | Por proyecto / Global | **por proyecto** |
-| graphify | Usarlo si esta / Ignorarlo | usarlo si esta |
 | Agentes | los detectados en la maquina | los que uses de verdad |
 
 Sin preguntas, para scripts o CI:
 
 ```bash
-npx un-specweaver init --lang es --engram-scope project --graphify auto \
-  --agents claude-code,opencode --yes
+npx un-specweaver init --lang es --agents claude-code,opencode --yes
 ```
 
 ### Verificar
@@ -285,21 +292,37 @@ $ npx un-specweaver init
 Precedencia: `--lang` > lo guardado > pregunta si hay terminal > `es`.
 Sin terminal (CI) nunca pregunta.
 
-## Capacidades opcionales
+## El mapa del codigo (graphify)
 
-Se **detectan, nunca se instalan**. Ausentes no son un error: `doctor` las reporta en su propia
-seccion y el flujo sigue funcionando.
+Es parte del metodo, no una capacidad opcional. `init` deja cuatro cosas:
 
-**graphify** — mapa del codigo. Los comandos que se benefician (`/sw:adopt`, `/sw:build`) llevan
-tres ramas explicitas: hay grafo → consultarlo; hay skill sin grafo → ofrecer construirlo;
-no hay nada → seguir **diciendo que el mapa va a ser menos confiable**. El fallo que esto evita
-es el silencioso: invocar `/graphify`, que no pase nada, y seguir como si tuvieras el mapa.
+| Que | Como | Para que |
+|---|---|---|
+| el binario | `uv tool install graphifyy==<pin>` (o `pipx`) | `graphify query / affected / path` desde cualquier agente |
+| la skill **dentro del proyecto** | `graphify install --project --platform <agente>` | `/graphify` en Claude Code y OpenCode, sin depender de `~/.claude` |
+| el alcance | `.graphifyignore` (bloque marcado, va al repo) | el grafo es **solo codigo** |
+| el grafo y su mantenimiento | `graphify update .` + `graphify hook install` | AST determinista; post-commit lo reconstruye solo |
 
-Detalle que importa: la skill suele vivir en `~/.claude/skills/`, asi que puede existir para
-Claude Code y no para OpenCode. La deteccion mira las cuatro rutas posibles y reporta cual.
+**Por que solo codigo.** La tercera regla del metodo: cada dato tiene un solo dueño. La intencion
+vive en el PRD, el contrato en los specs, el rationale en Engram, la estructura del codigo en el
+grafo. Si el grafo ingiere los otros tres, los duplica — y ademas deja de servir para lo que
+`/sw:adopt` lo necesita: contrastar la arquitectura **real** con la **declarada**. Un grafo que
+leyo `architecture.md` responde con lo que el documento dice, no con lo que el codigo hace.
 
-**uv** (Python) — BMAD lo usa para resolver su configuracion y lo verifica al instalar.
-Preflight lo revisa como **aviso, no como bloqueante**: las skills de BMAD traen fallback manual.
+**Que hacen los comandos con el.** `/sw:change` corre `graphify affected` para medir el impacto
+real de un requerimiento antes de clasificarlo; `/sw:bug` localiza el codigo del escenario y que
+mas puede romper la correccion; `/sw:build` y `/sw:adopt` consultan antes de leer archivos a ciegas.
+Las tres ramas siguen declaradas (hay grafo → consultar; no hay → `graphify update .`; no hay
+graphify → seguir **diciendo que el mapa va a ser menos confiable**), porque el fallo que hay que
+evitar es el silencioso.
+
+**Los hooks.** `graphify install` registra hooks `PreToolUse` en `.claude/settings.json` que le
+exigen al agente consultar el grafo antes de grepear o leer codigo. Se conservan, pero `init` los
+**acota a codigo**: tal como vienen tambien disparan sobre `.md`, y leer el PRD no debe pedir
+consultar un grafo que no lo contiene.
+
+**Proyecto nuevo.** Sin codigo, `graphify update .` termina bien y no crea nada; `doctor` lo
+reporta como "configurado; el grafo aparece con el primer codigo". No es un pendiente.
 
 ## Comandos del CLI
 
@@ -416,8 +439,9 @@ npx un-specweaver context [dir]    # artefactos a cargar antes de diseñar o con
 npx un-specweaver vendors          # pin actual: bmad, openspec, gentle
 ```
 
-- `context` lista briefs, PRDs, arquitectura, disenos UX y epics; sin artefactos te manda a
-  `/sw:new`.
+- `context` existe porque BMAD escribe en rutas fechadas y configurables (`{planning_artifacts}`);
+  lista brief, PRD, arquitectura, UX y `epics.md` donde de verdad quedaron, para que `/sw:build`
+  los cargue en vez de adivinarlos. Sin artefactos te manda a `/sw:new`.
 - Para subir un vendor: edita `src/vendors.json`, publica, y `doctor` reporta el drift.
 
 ### `dashboard` / `ui`
@@ -443,12 +467,18 @@ defecto). `--help` / `-h` y `--version` / `-v` tambien valen aqui.
 
 1. `.gitignore`: bloque marcado con lo regenerable. Va **primero** para que un paso posterior
    que falle no deje vendor a medio instalar listo para commitear
-2. Preflight: node ≥ 20.11, npx, curl, plataforma; `git` y `uv` como avisos
+2. Preflight: node ≥ 20.11, npx, curl, plataforma; `git` y `uv` como avisos (sin `uv` ni `pipx`,
+   el paso de graphify se detiene y dice que instalar)
 3. BMAD pineado, alcance del proyecto, solo el modulo de planeacion, idioma configurado
 4. Poda de la frontera
 5. `openspec init` con los agentes detectados
 6. Gentle-AI: binario (brew si esta disponible, si no el script oficial) + configuracion `--scope workspace`
-7. Los ocho comandos `/sw:*` en el formato de cada agente, la skill `un-specweaver` en todos los
+7. `.engram/config.json` con el nombre del proyecto: la memoria de Engram queda segmentada para
+   todos los agentes. Si una version anterior dejo un servidor `engram --project` en `.mcp.json`,
+   lo retira
+8. graphify pineado (via `uv` o `pipx`), la skill dentro del proyecto para cada agente,
+   `.graphifyignore` (solo codigo), los hooks acotados, el grafo AST y el hook de post-commit
+9. Los nueve comandos `/sw:*` en el formato de cada agente, la skill `un-specweaver` en todos los
    dirs de skills, y `docs/architecture-base.md`
 
 ### Prerequisitos que la herramienta NO resuelve sola
@@ -481,7 +511,7 @@ seria mentir.
 | Paso | Bloquea |
 |---|---|
 | `bmad`, `bmad-prune`, `openspec`, `layer` | planear (`/sw:new`, `/sw:adopt`) |
-| `gentle-bin`, `gentle-config` | **solo** `/sw:build` — planear funciona sin ellos |
+| `gentle-bin`, `gentle-config`, `engram-scope`, `graphify-bin`, `graphify` | **solo** `/sw:build` — planear funciona sin ellos |
 | `gitignore` | nada; es higiene del repo |
 
 Sin esa distincion un agente se detiene por Gentle-AI antes siquiera de levantar requerimientos,
@@ -498,6 +528,8 @@ reemplaza en vez de duplicarlo). En un proyecto real la diferencia es de **499 a
 | `_bmad-output/` — PRD y epics | `.claude/skills/bmad-*/`, `.agents/skills/bmad-*/` |
 | `docs/architecture-base.md` | `.claude/commands/sw/`, `.opencode/commands/sw-*.md` |
 | `.un-specweaver/` — config y trazabilidad | skills y comandos de OpenSpec |
+| `.engram/config.json` — nombre del proyecto en Engram | `graphify-out/` — AST regenerable; el hook lo reescribe en cada commit |
+| `.graphifyignore` — el alcance del grafo es regla del equipo | `.claude/skills/graphify/`, `.opencode/skills/graphify/` |
 
 Se ignora **por patron exacto, nunca `.claude/` entero**: tus propias skills y comandos siguen
 versionados. Un companero clona, corre `npx un-specweaver init`, y reconstituye el tooling desde
@@ -508,19 +540,20 @@ el pin — el repo guarda especificaciones, no dependencias.
 Casi todo queda dentro. Verificado con snapshot antes/despues: los pasos `bmad`, `openspec`,
 `layer` y `gitignore` **no** tocan `~/.claude` ni `~/.agents`.
 
-Dos excepciones, ambas anunciadas antes de correr:
+Tres excepciones, todas anunciadas antes de correr:
 
 | Paso | Que escribe fuera |
 |---|---|
 | `gentle-bin` | el binario de Gentle-AI (herramienta de sistema, via Homebrew o script oficial) |
 | `gentle-config` | Engram registra su servidor MCP: `~/.engram/`, `~/.claude/mcp/engram.json` y la config de cada agente |
+| `graphify-bin` | el binario de graphify, aislado por `uv tool` o `pipx` (herramienta de sistema) |
 
 `--scope workspace` cubre los assets de Gentle-AI pero **no** contiene a Engram: la configuracion
 MCP es global por naturaleza. Verificado en una maquina real — la version anterior de este README
 afirmaba lo contrario y era falso.
 
-Si no querés nada fuera del proyecto, corre `init --skip gentle-bin,gentle-config`: perdes el SDD
-y la memoria de decisiones, todo lo demas funciona igual.
+Si no querés nada fuera del proyecto, corre `init --skip gentle-bin,gentle-config,graphify-bin,graphify`:
+perdes el SDD, la memoria de decisiones y el mapa del codigo; todo lo demas funciona igual.
 
 Es idempotente: volver a correrlo omite lo ya hecho.
 
@@ -556,6 +589,22 @@ Todas verificadas contra los CLIs reales, no contra la documentacion.
 - **`openspec validate --strict` exige el literal `SHALL`/`MUST`** aunque el spec este en espanol.
   El modo por defecto emite prosa espanola con el keyword intacto; `--normative debe` lee mejor
   pero obliga a soltar `--strict`.
+- **La memoria de Engram se segmenta con `.engram/config.json`, no con `--project`.** Engram 1.20
+  resuelve el proyecto por cwd en cada llamada (config → git remote → raiz git → carpeta), y ese
+  archivo es la primera prioridad para **todos** sus servidores: el plugin de Claude Code, el
+  global que registra Gentle-AI, OpenCode y el CLI. La version 0.1.x registraba un segundo
+  servidor `engram mcp --project` en `.mcp.json`; en Claude Code eso convivia con el plugin y el
+  agente veia dos juegos de herramientas de memoria, y OpenCode ni lo leia. El nombre se deriva
+  igual que engram (repo del remote, minusculas) para que lo guardado antes de `init` quede bajo
+  la misma etiqueta. Las lecturas solo cruzan proyectos si el agente pide `all_projects`; la skill
+  y los comandos lo prohiben salvo que el usuario lo pida.
+- **El grafo de graphify es solo de codigo, y se instala en el proyecto.** `graphify update` es
+  AST puro (determinista, sin LLM, solo extensiones de codigo); en un proyecto sin codigo termina
+  en exit 0 sin crear nada, asi que greenfield no rompe `init`. `graphify install --project` deja
+  la skill en `.claude/skills/graphify` y `.opencode/skills/graphify` (no en `.agents/`, que es
+  donde BMAD manda las de OpenCode), agrega `## graphify` a `CLAUDE.md`/`AGENTS.md`, y en Claude
+  Code registra hooks `PreToolUse` que tambien disparan sobre `.md`: `init` los acota a codigo con
+  un reemplazo exacto, y si una version futura cambia el texto, no los toca.
 - **Cada vendor nombra los agentes distinto** (BMAD `claude-code`, OpenSpec `claude`,
   Gentle `claude-code`). El mapa en `src/vendors.json` es el unico lugar donde eso se sabe.
 - **`uv` es un prerequisito real de BMAD** que su documentacion no destaca: el instalador lo
@@ -593,7 +642,7 @@ Una sola duena por dato:
 ## Desarrollo
 
 ```bash
-npm test                    # 118 tests
+npm test                    # 123 tests
 npm pack                    # ~23 kB
 node bin/un-specweaver.mjs init --dry-run
 ```
@@ -607,9 +656,10 @@ implementando `status()` y `plan()`; `--dry-run`, la idempotencia y `doctor` sal
 |---|---|
 | `bridge/` — story → change | **funciona**, es/en, validado contra `openspec validate --all --strict` |
 | `init` / `doctor` — instalador multi-agente | **funciona**, probado end-to-end desde el tarball |
-| 8 comandos `/sw:*` | **funciona**, es/en, Claude Code + OpenCode |
+| 9 comandos `/sw:*` | **funciona**, es/en, Claude Code + OpenCode |
 | Skill `un-specweaver` | **funciona**, es/en, todos los agentes |
 | Mensajes del CLI bilingües | **funciona**, 86 cadenas, es/en |
-| graphify como capacidad opcional | **funciona**, deteccion + tres ramas declaradas |
+| graphify (mapa del codigo, solo codigo) | **funciona** — instalado, acotado, grafo AST y hook; verificado contra graphify 0.8.37 |
 | Gentle-AI (binario) | **funciona** — instala via Homebrew |
-| Engram | bloqueado por confianza del tap; detectado y reportado con remedio, sin ejecutar |
+| Engram (instalacion) | bloqueado por confianza del tap; detectado y reportado con remedio, sin ejecutar |
+| Engram (memoria por proyecto) | **funciona** — `.engram/config.json`, verificado contra engram 1.20 |

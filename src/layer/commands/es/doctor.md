@@ -20,10 +20,13 @@ Interpreta la salida para el usuario en vez de solo pegarla:
   si fuera lo mismo: la ultima linea de doctor ya distingue los dos casos, respetala.
 - `DRIFT` en vendors → que implica y si urge (ver `/sw:sync`)
 - preflight en `FALLA` → bloqueante, nada mas va a funcionar
-- `uv` ausente → **no** es bloqueante; BMAD resuelve su config sin el, solo mas lento
-- seccion `opcional` → graphify presente o ausente. Ausente **nunca** es un error:
-  el flujo funciona sin mapa del codigo, solo con menos precision. Si esta presente pero sin
-  grafo construido, sugiere `/graphify .` como mejora, no como requisito.
+- `uv` ausente → **no** es bloqueante para planear; BMAD resuelve su config sin el, solo mas
+  lento. Pero `init` lo necesita (o pipx) para instalar graphify: si `graphify-bin` esta en falta,
+  esa es la causa
+- `graphify-bin` / `graphify` en falta → bloquean **solo** `/sw:build`. Sin grafo el codigo se
+  explora a ciegas; se resuelve con `npx un-specweaver init`. "configurado; el grafo aparece con
+  el primer codigo" en un proyecto nuevo es correcto, no un pendiente
+- seccion `opcional` → Engram. Ausente **no** es un error: el rationale va a `design.md`
 
 ## Paso 2 — Coherencia del flujo
 

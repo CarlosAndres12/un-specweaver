@@ -58,23 +58,25 @@ scratch what was already decided, reviewed and approved.
 
 ## Code map (graphify)
 
-graphify is **optional**. Resolve in this order and **say which branch you took**:
+graphify is **part of the method**, not an optional capability: `init` installs it, drops the skill
+into the project, scopes the graph to **code only** with `.graphifyignore`, builds the AST graph and
+leaves a hook that rebuilds it on every commit. The graph is the only witness of the **real**
+structure of the code — it has not read the PRD or the declared architecture, on purpose.
 
-0. **Read `.un-specweaver/config.json`.** If `preferences.graphify` is `"off"`, the user chose not
-   to use it: jump to branch 3 even if installed. The preference overrides detection.
+Resolve in this order and **say which branch you took**:
 
-1. **`graphify-out/graph.json` exists** → query it with `/graphify query "<question>"`.
-   Do not read files blind when a graph exists.
-2. **The graphify skill exists but there is no graph** → offer to build it with `/graphify .`
-   before continuing. On large repos this takes a while, so ask instead of assuming.
-3. **Neither exists** → fall back to normal exploration (Glob/Grep/Read) and **explicitly warn
-   that the map will be less reliable**.
+1. **`graphify-out/graph.json` exists** → query it: `graphify query "<question>"` for context,
+   `graphify affected "<symbol or file>"` to learn what depends on something, `graphify path "A" "B"`
+   for the route between two pieces. Do not read files blind when a graph exists.
+2. **No graph but `graphify` is on PATH** → build it: `graphify update .` (AST, seconds, no LLM).
+   If the project has no code yet, it is normal for it not to exist; carry on.
+3. **`graphify` is not on PATH** → `npx un-specweaver doctor` reports it missing and
+   `npx un-specweaver init` fixes it. If that is not possible now, fall back to Glob/Grep/Read and
+   **explicitly warn that the map will be less reliable**.
 
-The only serious failure here is the silent one: invoking `/graphify`, nothing happening, and
-carrying on as if you had the map. `npx un-specweaver doctor` reports whether it is available and where.
-
-Note: the skill usually lives in `~/.claude/skills/`, so it may exist for Claude Code and not for
-OpenCode. Check in the agent you are actually running in; do not assume.
+The only serious failure is the silent one: invoking graphify, nothing happening, and carrying on
+as if you had the map. **Do not widen the graph to docs** (full `/graphify .` over the PRD or specs):
+those layers have another owner and duplicating them in the graph is how they start to contradict.
 
 ## Step 3 — Build against the spec
 
@@ -110,13 +112,17 @@ Offer them at close; do not impose them.
 2. `npx @fission-ai/openspec validate --all --strict`
 3. Record the implementation decisions that are not obvious from the code (see "Memory" below)
 4. `openspec archive <change-id>` once delivered — that folds the delta into the main spec
+5. The graphify hook rebuilds the graph on commit. If you have not committed yet, run `graphify update .`
+   so the next change sees the new code
 
 ## Decision memory (Engram)
 
-Engram is **optional**. `npx un-specweaver doctor` says whether it is available, and
-`.un-specweaver/config.json` says at what scope: `preferences.engramScope` set to `"project"`
-means this project cannot see other projects' memory; set to `"global"`, it shares it.
-If you are about to store something sensitive from a client and the scope is global, **say so first**.
+Engram is **optional**, and its memory is **always scoped per project**: `.engram/config.json`
+pins the name it saves under and searches in. What you store here does not show up in other
+projects, and theirs does not show up here, unless you explicitly ask for a cross-project search
+(`all_projects`). Do not do that by default: another project's memory slipping in as if it were
+this one's is a hallucination with a citation. If `mem_current_project` does not return
+`project_source: "config"`, the binding is missing — run `npx un-specweaver init` before saving.
 
 - **If `engram` is on PATH** → store the decision and its reason there.
 - **If it is not** → write it anyway, in the change's `design.md` under `## Decisions`, and

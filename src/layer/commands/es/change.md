@@ -24,6 +24,11 @@ Lee `.un-specweaver/trace.json` y `_bmad-output/prd.md`. Clasifica el requerimie
 Di la clasificacion en voz alta, con el FR o la story concreta que la sustenta. Si dudas entre
 dos, elige la mas restrictiva y explica por que.
 
+**Mide el impacto en el codigo real, no el imaginado.** Si hay `graphify-out/graph.json`, corre
+`graphify affected "<modulo o simbolo que toca el requerimiento>"` y reporta que depende de eso:
+un "dentro del alcance" que arrastra cinco modulos no es tan dentro del alcance. Si no hay grafo,
+`graphify update .` lo construye en segundos; si graphify no esta, dilo y sigue.
+
 **No sigas al Paso 2 sin que el usuario confirme una clasificacion que no sea "dentro del alcance".**
 
 ## Paso 2 — Actualizar el documento fuente, no el derivado
@@ -54,10 +59,12 @@ npx @fission-ai/openspec validate --all --strict
 
 ## Paso 5 — Registrar el por que
 
-Engram es **opcional**. `npx un-specweaver doctor` dice si esta disponible, y
-`.un-specweaver/config.json` dice con que alcance: `preferences.engramScope` en `"project"`
-significa que este proyecto no ve la memoria de los demas; en `"global"`, la comparte.
-Si guardas algo sensible de un cliente y el alcance es global, **dilo antes de guardarlo**.
+Engram es **opcional**, y su memoria **siempre esta segmentada por proyecto**: `.engram/config.json`
+fija el nombre bajo el que se guarda y se busca. Lo que guardes aqui no aparece en otros
+proyectos, y lo de otros proyectos no aparece aqui, salvo que pidas explicitamente una busqueda
+cross-proyecto (`all_projects`). No lo hagas por defecto: una memoria de otro proyecto que se
+cuela como si fuera de este es una alucinacion con fuente. Si `mem_current_project` no devuelve
+`project_source: "config"`, el binding falta — corre `npx un-specweaver init` antes de guardar.
 
 - **Si `engram` esta en PATH** → guarda ahi la decision y su razon.
 - **Si no esta** → escribela igual, en `design.md` del change bajo `## Decisions`, y **avisa

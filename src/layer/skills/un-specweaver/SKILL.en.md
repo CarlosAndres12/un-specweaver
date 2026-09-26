@@ -83,28 +83,36 @@ would otherwise assume.
 `.un-specweaver/config.json` stores what the user chose at init time:
 
 ```json
-"preferences": { "lang": "es", "engramScope": "project", "graphify": "auto" }
+"preferences": { "lang": "es", "agents": ["claude-code", "opencode"] }
 ```
 
-**Read them before deciding on your own.** If `graphify` is `"off"`, do not use it even if
-installed. If `engramScope` is `"global"`, memory is shared with the user's other projects and
-it is worth saying so before storing anything sensitive. Never ask about these in conversation:
-they are already decided, and they change with `npx un-specweaver init --graphify off`.
+**Read them before deciding on your own.** Never ask about these in conversation: they are
+already decided, and they change with `npx un-specweaver init --lang en`.
+
+## Code map (graphify) — part of the method
+
+`init` installs graphify, drops its skill into the project, scopes the graph to **code only** with
+`.graphifyignore`, builds the AST graph (`graphify-out/graph.json`) and leaves a hook that rebuilds
+it on every commit. It is the only witness of the **real** structure of the code.
+
+- Graph exists → `graphify query`, `graphify affected`, `graphify path`. Do not read files blind.
+- No graph → `graphify update .` (seconds, no LLM). With no code yet, that is normal.
+- No graphify → `doctor` says so, `init` fixes it. If not possible now, carry on and **say so**.
+- **Do not widen the graph to docs.** PRD, specs and memory have another owner (table above).
 
 ## Optional capabilities
-
-**graphify** is detected, not installed. If `graphify-out/graph.json` exists, query it instead of
-reading files blind. If the skill is there but no graph exists, offer to build it. If it is absent,
-carry on without it and **say so** — the serious failure is invoking it, nothing happening, and
-carrying on as if you had the map. `npx un-specweaver doctor` reports whether it is available and where.
-It may exist for Claude Code and not for OpenCode.
 
 **Engram** is installed by Gentle-AI, but can be blocked by Homebrew trust. If `engram` is not
 on PATH, write the rationale in the change's `design.md` under `## Decisions` and say so.
 Never lose it silently.
 
-**uv** (Python) is used by BMAD to resolve its configuration. If missing, the skills have a manual
-fallback: slower, not an error.
+Engram memory is **always scoped per project**: `.engram/config.json` pins the name, and every
+Engram MCP server honors it. Do not search with `all_projects` or a foreign `project` unless the
+user asks: another project's memory read as if it were this one's is the easiest way to
+hallucinate with a citation.
+
+**uv** (Python) is used by BMAD to resolve its configuration, and it is one of the two ways
+(with pipx) `init` installs graphify. If BMAD cannot find it, its skills have a manual fallback.
 
 ## Known limit
 

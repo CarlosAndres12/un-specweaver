@@ -15,23 +15,30 @@ El error tipico de esta fase es planear contra lo que crees que hace el codigo.
 
 ## Mapa del codigo (graphify)
 
-graphify es **opcional**. Resuelve en este orden y **di cual rama tomaste**:
+graphify es **parte del metodo**, no una capacidad opcional: `init` lo instala, deja la skill en el
+proyecto, acota el grafo a **solo codigo** con `.graphifyignore`, construye el grafo AST y deja un
+hook que lo reconstruye en cada commit. El grafo es el unico testigo de la estructura **real** del
+codigo — no leyo el PRD ni la arquitectura declarada, a proposito.
 
-0. **Lee `.un-specweaver/config.json`.** Si `preferences.graphify` es `"off"`, el usuario decidio
-   no usarlo: salta a la rama 3 aunque este instalado. La preferencia manda sobre la deteccion.
+Resuelve en este orden y **di cual rama tomaste**:
 
-1. **Existe `graphify-out/graph.json`** → consultalo con `/graphify query "<pregunta>"`.
-   No leas archivos a ciegas cuando hay grafo.
-2. **Existe la skill graphify pero no hay grafo** → ofrece construirlo con `/graphify .`
-   antes de seguir. En repos grandes tarda, asi que pregunta en vez de asumir.
-3. **No existe ninguno** → sigue con exploracion normal (Glob/Grep/Read) y **avisa
-   explicitamente que el mapa va a ser menos confiable**.
+1. **Existe `graphify-out/graph.json`** → consultalo: `graphify query "<pregunta>"` para contexto,
+   `graphify affected "<simbolo o archivo>"` para saber que depende de algo, `graphify path "A" "B"`
+   para la ruta entre dos piezas. No leas archivos a ciegas cuando hay grafo.
+2. **No hay grafo pero `graphify` esta en PATH** → constrúyelo: `graphify update .` (AST, segundos,
+   sin LLM). Si el proyecto no tiene codigo todavia, es normal que no exista; sigue.
+3. **`graphify` no esta en PATH** → `npx un-specweaver doctor` dice que falta y `npx un-specweaver init`
+   lo resuelve. Si no se puede ahora, sigue con Glob/Grep/Read y **avisa explicitamente que el
+   mapa va a ser menos confiable**.
 
-El unico error grave aqui es el silencioso: invocar `/graphify`, que no pase nada, y seguir
-como si tuvieras el mapa. `npx un-specweaver doctor` reporta si esta disponible y donde.
+El unico error grave es el silencioso: invocar graphify, que no pase nada, y seguir como si
+tuvieras el mapa. **No amplíes el grafo a docs** (`/graphify .` completo sobre PRD o specs):
+esas capas tienen otro dueño y duplicarlas en el grafo es como empiezan a contradecirse.
 
-Nota: la skill suele vivir en `~/.claude/skills/`, asi que puede estar en Claude Code y no en
-OpenCode. Verifica en el agente donde estas corriendo, no asumas.
+**La excepcion de brownfield:** si el proyecto trae docs tecnicos *anteriores al metodo* (README de
+arquitectura, ADRs viejos, wikis), contrastarlos contra el codigo es justamente el diagnostico de
+esta fase. Ahi vale correr `/graphify <carpeta-de-esos-docs>` **una vez, preguntando primero**
+(usa LLM y tokens), y quitar esa carpeta de `.graphifyignore` solo mientras dure la adopcion.
 
 ## Fase 2 — Arquitectura real vs arquitectura declarada
 

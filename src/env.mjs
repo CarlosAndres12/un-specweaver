@@ -117,15 +117,45 @@ export function untrustedItems(tap, names, home = os.homedir(), env = process.en
 // Engram lo instala Gentle-AI, pero puede quedar bloqueado por confianza de Homebrew.
 // Se detecta por la misma razon que graphify: el fallo grave seria que un comando diga
 // "registra esto en Engram", no pase nada, y el rationale se pierda en silencio.
-// Nombre de proyecto para Engram: estable, derivado de la carpeta. Es la etiqueta que
-// separa la memoria de un proyecto de la de otro.
+
+// Nombre de repo tal como lo deriva engram de `origin` (extractRepoName + normalize):
+// ultimo segmento de la URL, sin .git, en minusculas. Se replica para que las memorias
+// guardadas ANTES de correr init (por autodeteccion) queden bajo el mismo nombre.
+export function gitRemoteName(root) {
+  try {
+    const url = execFileSync('git', ['-C', root, 'remote', 'get-url', 'origin'], { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim().replace(/\.git$/, '');
+    const name = url.split(/[/:]/).filter(Boolean).pop() || '';
+    return name.trim().toLowerCase() || null;
+  } catch { return null; }
+}
+
+// Nombre de proyecto para Engram: estable y derivado del repo. Es la etiqueta que separa
+// la memoria de un proyecto de la de otro. Primero el remote (lo mismo que engram
+// autodetecta); sin remote, la carpeta en forma segura.
 export function engramProject(root) {
+  const remote = gitRemoteName(root);
+  if (remote) return remote;
   return path.basename(path.resolve(root)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-// Lee del .mcp.json del proyecto si engram quedo atado a un proyecto concreto.
-// Sin ese binding la memoria es global y se mezcla entre proyectos: verificado.
+export const ENGRAM_CONFIG = path.join('.engram', 'config.json');
+
+// Lee a que proyecto quedo atada la memoria. La fuente es .engram/config.json: es el
+// caso 0 de la deteccion de engram (mayor prioridad) y lo respetan TODOS sus servidores
+// MCP — el plugin de Claude Code, el global de Gentle-AI, OpenCode y el CLI — porque
+// todos resuelven por cwd.
 export function engramBinding(root) {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(root, ENGRAM_CONFIG), 'utf8'));
+    return String(j.project_name || '').trim().toLowerCase() || null;
+  } catch { return null; }
+}
+
+// Version anterior: un servidor "engram" con --project en .mcp.json. En Claude Code
+// convivia con el plugin de Engram y el agente veia dos juegos de herramientas de
+// memoria; en OpenCode no aplicaba (no lee .mcp.json). Se detecta para retirarlo.
+export function legacyEngramMcp(root) {
   try {
     const j = JSON.parse(fs.readFileSync(path.join(root, '.mcp.json'), 'utf8'));
     const srv = j.mcpServers?.engram;
@@ -138,8 +168,7 @@ export function engramBinding(root) {
 
 export function detectEngram(root) {
   const bin = which('engram');
-  const store = ['.engram', '.atl'].map((d) => path.join(root, d)).find((d) => fs.existsSync(d));
-  return { available: !!bin, bin, store: store ? path.relative(root, store) : null, project: engramBinding(root) };
+  return { available: !!bin, bin, project: engramBinding(root), legacyMcp: !!legacyEngramMcp(root) };
 }
 
 export function isGitRepo(dir) {
@@ -163,24 +192,42 @@ export function vendorIds(agents, vendor) {
   return agents.map((a) => a.ids?.[vendor]).filter(Boolean).join(',');
 }
 
-// graphify es una capacidad OPCIONAL: se detecta, nunca se instala.
-// El modo de fallo que hay que evitar es el silencioso — que el agente invoque /graphify,
-// no pase nada, y siga explorando a ciegas sin decirlo. Por eso se reporta siempre.
+// graphify es parte del metodo, no una capacidad opcional: el grafo AST es el unico testigo
+// de la estructura REAL del codigo, y /sw:change lo usa para medir impacto. Se detecta con
+// precision porque el modo de fallo que hay que evitar es el silencioso: que el agente invoque
+// /graphify, no pase nada, y siga explorando a ciegas sin decirlo.
 //
-// Ojo: la skill suele vivir en ~/.claude/skills/, o sea que puede existir para Claude Code
-// y no para OpenCode. Se miran las cuatro rutas y se reporta cual.
-export function detectGraphify(root, home = os.homedir()) {
-  const candidates = [
-    [path.join(root, '.claude', 'skills', 'graphify'), 'proyecto/.claude'],
-    [path.join(root, '.agents', 'skills', 'graphify'), 'proyecto/.agents'],
-    [path.join(home, '.claude', 'skills', 'graphify'), '~/.claude'],
-    [path.join(home, '.agents', 'skills', 'graphify'), '~/.agents'],
-  ];
-  const found = candidates.filter(([p]) => fs.existsSync(p));
-  const graphPath = path.join(root, 'graphify-out', 'graph.json');
+// La skill se instala DENTRO del proyecto (graphify install --project), en la ruta que cada
+// agente usa para graphify — no coincide con la de BMAD para OpenCode (.opencode vs .agents).
+export function detectGraphify(root, agents = Object.entries(VENDORS.agents).map(([id, a]) => ({ ...a, id }))) {
+  const v = VENDORS.graphify;
+  const skills = agents
+    .filter((a) => a.graphifySkill)
+    .map((a) => ({ id: a.id, path: a.graphifySkill, present: fs.existsSync(path.join(root, a.graphifySkill, 'SKILL.md')) }));
+  const graphPath = path.join(root, v.outDir, 'graph.json');
   return {
-    available: found.length > 0,
-    where: found.map(([, label]) => label).join(', ') || null,
+    bin: which(v.bin),
+    skills,
+    ignore: graphifyIgnoreOk(root),
+    hook: graphifyHookOk(root),
     graph: fs.existsSync(graphPath) ? path.relative(root, graphPath) : null,
   };
+}
+
+export const GRAPHIFY_IGNORE_START = '# >>> un-specweaver >>>';
+export const GRAPHIFY_IGNORE_END   = '# <<< un-specweaver <<<';
+
+export function graphifyIgnoreOk(root) {
+  try { return fs.readFileSync(path.join(root, VENDORS.graphify.ignoreFile), 'utf8').includes(GRAPHIFY_IGNORE_START); }
+  catch { return false; }
+}
+
+// El hook lo escribe `graphify hook install` en .git/hooks/post-commit. Se verifica por
+// contenido, no por existencia: un post-commit ajeno no cuenta.
+export function graphifyHookOk(root) {
+  try {
+    const gitDir = execFileSync('git', ['-C', root, 'rev-parse', '--git-dir'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const hook = path.resolve(root, gitDir, 'hooks', 'post-commit');
+    return fs.readFileSync(hook, 'utf8').includes('graphify');
+  } catch { return false; }
 }

@@ -38,25 +38,16 @@ Los comandos, para tenerlos a mano:
     1) Espanol
     2) English
 `,
-    'prefs.engramScope': `
-  Memoria de Engram
-    1) Por proyecto  — este proyecto no ve la memoria de los demas
-    2) Global        — una sola memoria para todo lo que trabajes
-`,
-    'prefs.graphify': `
-  Mapa del codigo con graphify (opcional, se detecta solo)
-    1) Usarlo si esta instalado
-    2) Ignorarlo aunque este
-`,
 
     'lang.name': 'Spanish',
 
     'check.node': 'node >= 20.11', 'check.npx': 'npx', 'check.curl': 'curl',
     'check.git': 'git', 'check.platform': 'plataforma soportada',
-    'check.uv': 'uv (Python)', 'check.uvMissing': 'ausente — BMAD resuelve su config sin el, pero mas lento',
+    'check.uv': 'uv (Python)', 'check.uvMissing': 'ausente — BMAD lo usa para su config (funciona sin el, mas lento); graphify necesita uv o pipx para instalarse',
     'check.notFound': 'no encontrado',
 
     'run.wrote': (f) => `escrito ${f}`,
+    'run.patched': (f) => `ajustado ${f}`,
     'run.removed': (f) => `removido ${f}`,
     'run.kept': (f) => `conservado ${f}`,
     'run.refusedOutside': (p) => `se rechazo borrar fuera del proyecto: ${p}`,
@@ -156,24 +147,41 @@ ${cmds}
     'engram.name': 'engram',
     'engram.present': (b) => `presente (${b})`,
     'engram.absent': 'ausente — el flujo funciona, pero el rationale de las decisiones no se guarda',
-    'engram.globalByChoice': 'memoria GLOBAL por configuracion — compartida con tus otros proyectos',
-    'graphify.disabled': 'desactivado por configuracion del proyecto',
-    'step.engram.globalChoice': 'configurado como memoria global',
-    'engram.store': (p) => `memoria en ${p}`,
-    'engram.noStore': 'binario disponible, sin memoria en este proyecto todavia',
-    'engram.scoped': (p) => `memoria aislada como "${p}"`,
-    'engram.shared': 'MEMORIA COMPARTIDA con otros proyectos — sin --project, las busquedas ven todo',
-    'step.engram.title': 'Aislar la memoria de Engram por proyecto',
-    'step.engram.ok': (p) => `atado a "${p}"`,
-    'step.engram.pending': (p) => `atar la memoria al proyecto "${p}"`,
-    'step.engram.skip': 'engram no esta instalado',
-    'step.engram.why': 'sin esto la memoria de este proyecto se mezcla con la de los demas',
+    'engram.scoped': (p) => `memoria segmentada como "${p}" (.engram/config.json)`,
+    'engram.unbound': 'sin .engram/config.json — engram autodetecta el proyecto, pero el nombre no queda fijado en el repo',
+    'step.graphify-bin.title': 'Instalar graphify (mapa del codigo)',
+    'step.graphify-bin.missing': 'graphify no esta en PATH',
+    'step.graphify-bin.already': (b) => `${b} ya esta instalado`,
+    'step.graphify-bin.why': (via) => `instala graphify pineado via ${via}, aislado en su propio entorno de Python`,
+    'step.graphify-bin.noInstaller': 'no hay uv ni pipx para instalar graphify',
+    'step.graphify-bin.noInstallerWhy': `graphify es una herramienta de Python. uv y pipx la aislan en su propio entorno; instalarla
+     con pip sobre el Python del sistema es lo que un-specweaver no va a hacer por vos.`,
+    'step.graphify-bin.noInstallerFix': (platform) => `instala uno de los dos y vuelve a correr init:
+       ${platform === 'darwin' ? 'brew install uv' : 'curl -LsSf https://astral.sh/uv/install.sh | sh'}
+       npx un-specweaver init`,
+    'step.graphify.title': 'Mapa del codigo: skill en el proyecto, alcance solo codigo, grafo AST y hook',
+    'step.graphify.after': 'corre despues de instalar graphify',
+    'step.graphify.pending': (m) => `falta: ${m}`,
+    'step.graphify.ok': (g) => `configurado; grafo en ${g}`,
+    'step.graphify.okNoGraph': 'configurado; el grafo aparece con el primer codigo (todavia no hay)',
+    'step.graphify.scope': `El grafo es SOLO de codigo. PRD, specs, docs y memoria tienen otro dueno y no se
+     duplican aqui; .graphifyignore lo garantiza aunque alguien corra /graphify completo.`,
+    'step.graphify.ignoreWhy': 'acota el grafo a codigo — va al repo, es la regla del equipo',
+    'step.graphify.skillWhy': (a) => `skill de graphify dentro del proyecto para ${a} (tambien agrega "## graphify" a su archivo de contexto)`,
+    'step.graphify.hooksWhy': 'acota los hooks PreToolUse de graphify a codigo: leer el PRD o un spec no debe pedir consultar el grafo',
+    'step.graphify.updateWhy': 'grafo AST inicial: determinista, sin LLM; sin codigo termina bien y no crea nada',
+    'step.graphify.hookWhy': 'post-commit y post-checkout reconstruyen solo lo que cambio — el grafo nunca queda viejo',
+    'step.graphify.noGitHook': 'sin repo git no se instala el hook: reconstruye con `graphify update .` cuando cambie el codigo',
+    'step.engram.title': 'Segmentar la memoria de Engram por proyecto',
+    'step.engram.ok': (p) => `atada a "${p}"`,
+    'step.engram.pending': (p) => `escribir .engram/config.json con "${p}"`,
+    'step.engram.legacy': 'migrar: .mcp.json trae un servidor engram --project de una version anterior',
+    'step.engram.legacyNote': `El servidor "engram --project" en .mcp.json era de la version anterior. En Claude Code
+     convivia con el plugin de Engram y el agente veia dos juegos de herramientas de memoria;
+     OpenCode no lo leia. .engram/config.json lo reemplaza para todos los agentes.`,
+    'step.engram.legacyWhy': 'retira solo la entrada engram; los demas servidores MCP quedan igual',
+    'step.engram.why': (p) => `fija "${p}" como proyecto de Engram para todos los agentes; sin esto cada servidor deriva el nombre por su cuenta`,
 
-    'graphify.name': 'graphify',
-    'graphify.present': (where) => `presente (${where})`,
-    'graphify.absent': 'ausente — los comandos siguen funcionando, pero sin mapa del codigo',
-    'graphify.graph': (p) => `grafo construido en ${p}`,
-    'graphify.noGraph': 'skill disponible, sin grafo construido todavia',
   },
 
   en: {
@@ -212,25 +220,16 @@ The commands, for reference:
     1) Espanol
     2) English
 `,
-    'prefs.engramScope': `
-  Engram memory
-    1) Per project  — this project does not see other projects' memory
-    2) Global       — one shared memory across everything you work on
-`,
-    'prefs.graphify': `
-  Code map via graphify (optional, auto-detected)
-    1) Use it if installed
-    2) Ignore it even if present
-`,
 
     'lang.name': 'English',
 
     'check.node': 'node >= 20.11', 'check.npx': 'npx', 'check.curl': 'curl',
     'check.git': 'git', 'check.platform': 'supported platform',
-    'check.uv': 'uv (Python)', 'check.uvMissing': 'absent — BMAD resolves its config without it, but slower',
+    'check.uv': 'uv (Python)', 'check.uvMissing': 'absent — BMAD uses it for its config (works without it, slower); graphify needs uv or pipx to install',
     'check.notFound': 'not found',
 
     'run.wrote': (f) => `wrote ${f}`,
+    'run.patched': (f) => `adjusted ${f}`,
     'run.removed': (f) => `removed ${f}`,
     'run.kept': (f) => `kept ${f}`,
     'run.refusedOutside': (p) => `refused to delete outside the project: ${p}`,
@@ -327,43 +326,45 @@ ${cmds}
     'doctor.pending': (n) => `\n${n} step(s) pending. Run "un-specweaver init" — completed ones are skipped.`,
     'doctor.allGood': '\nAll up to date.',
 
-    'engram.name': 'engram',
-    'engram.present': (b) => `presente (${b})`,
-    'engram.absent': 'ausente — el flujo funciona, pero el rationale de las decisiones no se guarda',
-    'engram.globalByChoice': 'memoria GLOBAL por configuracion — compartida con tus otros proyectos',
-    'graphify.disabled': 'desactivado por configuracion del proyecto',
-    'step.engram.globalChoice': 'configurado como memoria global',
-    'engram.store': (p) => `memoria en ${p}`,
-    'engram.noStore': 'binario disponible, sin memoria en este proyecto todavia',
-    'engram.scoped': (p) => `memoria aislada como "${p}"`,
-    'engram.shared': 'MEMORIA COMPARTIDA con otros proyectos — sin --project, las busquedas ven todo',
-    'step.engram.title': 'Aislar la memoria de Engram por proyecto',
-    'step.engram.ok': (p) => `atado a "${p}"`,
-    'step.engram.pending': (p) => `atar la memoria al proyecto "${p}"`,
-    'step.engram.skip': 'engram no esta instalado',
-    'step.engram.why': 'sin esto la memoria de este proyecto se mezcla con la de los demas',
 
     'engram.name': 'engram',
     'engram.present': (b) => `present (${b})`,
     'engram.absent': 'absent — the flow works, but decision rationale is not recorded',
-    'engram.globalByChoice': 'GLOBAL memory by configuration — shared with your other projects',
-    'graphify.disabled': 'disabled by project configuration',
-    'step.engram.globalChoice': 'configured as global memory',
-    'engram.store': (p) => `memory at ${p}`,
-    'engram.noStore': 'binary available, no memory in this project yet',
-    'engram.scoped': (p) => `memory isolated as "${p}"`,
-    'engram.shared': 'MEMORY SHARED with other projects — without --project, searches see everything',
+    'engram.scoped': (p) => `memory scoped as "${p}" (.engram/config.json)`,
+    'engram.unbound': 'no .engram/config.json — engram auto-detects the project, but the name is not pinned in the repo',
+    'step.graphify-bin.title': 'Install graphify (code map)',
+    'step.graphify-bin.missing': 'graphify is not on PATH',
+    'step.graphify-bin.already': (b) => `${b} already installed`,
+    'step.graphify-bin.why': (via) => `installs pinned graphify via ${via}, isolated in its own Python environment`,
+    'step.graphify-bin.noInstaller': 'neither uv nor pipx available to install graphify',
+    'step.graphify-bin.noInstallerWhy': `graphify is a Python tool. uv and pipx isolate it in its own environment; installing it
+     with pip into the system Python is something un-specweaver will not do on your behalf.`,
+    'step.graphify-bin.noInstallerFix': (platform) => `install one of them and run init again:
+       ${platform === 'darwin' ? 'brew install uv' : 'curl -LsSf https://astral.sh/uv/install.sh | sh'}
+       npx un-specweaver init`,
+    'step.graphify.title': 'Code map: project skill, code-only scope, AST graph and hook',
+    'step.graphify.after': 'runs after installing graphify',
+    'step.graphify.pending': (m) => `missing: ${m}`,
+    'step.graphify.ok': (g) => `configured; graph at ${g}`,
+    'step.graphify.okNoGraph': 'configured; the graph appears with the first code (none yet)',
+    'step.graphify.scope': `The graph is code ONLY. PRD, specs, docs and memory have another owner and are not
+     duplicated here; .graphifyignore guarantees it even if someone runs the full /graphify.`,
+    'step.graphify.ignoreWhy': 'scopes the graph to code — goes to the repo, it is the team rule',
+    'step.graphify.skillWhy': (a) => `graphify skill inside the project for ${a} (also adds "## graphify" to its context file)`,
+    'step.graphify.hooksWhy': 'scopes graphify PreToolUse hooks to code: reading the PRD or a spec must not demand a graph query',
+    'step.graphify.updateWhy': 'initial AST graph: deterministic, no LLM; with no code it exits fine and writes nothing',
+    'step.graphify.hookWhy': 'post-commit and post-checkout rebuild only what changed — the graph never goes stale',
+    'step.graphify.noGitHook': 'no git repo, so no hook: rebuild with `graphify update .` when code changes',
     'step.engram.title': 'Scope Engram memory to this project',
     'step.engram.ok': (p) => `bound to "${p}"`,
-    'step.engram.pending': (p) => `bind memory to project "${p}"`,
-    'step.engram.skip': 'engram is not installed',
-    'step.engram.why': "without this the project's memory mixes with every other project's",
+    'step.engram.pending': (p) => `write .engram/config.json with "${p}"`,
+    'step.engram.legacy': 'migrate: .mcp.json carries an engram --project server from a previous version',
+    'step.engram.legacyNote': `The "engram --project" server in .mcp.json came from the previous version. In Claude Code
+     it coexisted with the Engram plugin and the agent saw two sets of memory tools;
+     OpenCode never read it. .engram/config.json replaces it for every agent.`,
+    'step.engram.legacyWhy': 'removes only the engram entry; every other MCP server stays untouched',
+    'step.engram.why': (p) => `pins "${p}" as the Engram project for every agent; without it each server derives the name on its own`,
 
-    'graphify.name': 'graphify',
-    'graphify.present': (where) => `present (${where})`,
-    'graphify.absent': 'absent — commands still work, but without a code map',
-    'graphify.graph': (p) => `graph built at ${p}`,
-    'graphify.noGraph': 'skill available, no graph built yet',
   },
 };
 

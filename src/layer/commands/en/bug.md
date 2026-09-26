@@ -33,6 +33,10 @@ Reporting as a defect something that was never specified turns the spec into fic
 
 Write the failing test **first**. A defect with no test reproducing it is a hypothesis.
 
+To locate the code that implements the scenario use the graph: `graphify query "<what the scenario
+does>"` and, before touching anything, `graphify affected "<function or file>"` to learn what else
+the fix could break. If there is no graph, `graphify update .`; if graphify is missing, say so.
+
 If you cannot reproduce it, say so instead of fixing blind.
 
 ## Step 3 — The change
