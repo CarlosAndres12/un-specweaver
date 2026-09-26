@@ -13,7 +13,21 @@ The requirement comes in `$ARGUMENTS`. If empty, ask for it before doing anythin
 
 ## Step 1 — Scope control (before touching a single file)
 
-Read `.un-specweaver/trace.json` and `_bmad-output/prd.md`. Classify the requirement as exactly **one** of:
+Read `.un-specweaver/trace.json` and the PRD. And before classifying, **look at the history of
+the requirement it touches**:
+
+```
+npx un-specweaver history            # ranking: which requirements changed most, and how much
+npx un-specweaver history FR-21      # everything decided, changed or discarded about that FR
+```
+
+It crosses the `.memlog.md` files BMAD writes while conversing (decisions, changes, discards with
+their reason), the `sprint-change-proposal-*.md` files and the bridge history. If what is being
+asked **was already discarded**, say so with the entry and its reason before reopening it:
+reopening a decision without knowing it existed is the most expensive way to lose time. An FR with
+many changes is an FR nobody understands the same way; if that is the case, say so too.
+
+Classify the requirement as exactly **one** of:
 
 | Classification | How to recognize it | What follows |
 |---|---|---|
@@ -47,6 +61,20 @@ npx un-specweaver bridge --only <N.M> --force
 
 One `--only` per touched story. **Do not regenerate everything**: you would overwrite in-flight
 changes other developers are already working on.
+
+The bridge knows it is regenerating, not creating:
+
+- if the change exists and is in progress, it **keeps the checked boxes** in `tasks.md` and tells
+  you which were lost because the task text changed
+- if the requirement is **already archived** (lives in `openspec/specs/`), it emits
+  `## MODIFIED Requirements` in a new change `<id>-r2`, `-r3`… — the previous one stays in
+  `archive/`. It reuses the archived scenario names because OpenSpec demands them; the content
+  is updated
+- if the story **dropped** an archived scenario, the bridge **fails and writes nothing**: OpenSpec
+  does not allow removing it in a `MODIFIED`. Follow the instruction it prints (keep the criterion,
+  or a manual `## REMOVED Requirements` change archived before regenerating). Do not patch by hand
+- `trace.json` is merged: stories you did not touch keep their entry
+- every run lands in `.un-specweaver/changelog.jsonl`: the history of what was regenerated when
 
 Before running it, check `.un-specweaver/sprint-plan.md`: if the affected story has dependents in
 later waves, name which ones are impacted.

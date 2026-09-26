@@ -1,6 +1,7 @@
 // Emisor determinista: story de BMAD -> change de OpenSpec.
 // Una story = un change. Un epic = una capability.
 import { slug } from './parse-epics.mjs';
+import { reconcileScenarioNames, revisedId } from './history.mjs';
 
 const capitalize = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const lower1     = (s) => (s ? s[0].toLowerCase() + s.slice(1) : s);
@@ -99,7 +100,17 @@ function scenarioName(ac, i, taken) {
   return name;
 }
 
-function specDelta(epic, story, { isNewCapability, lang, normative }) {
+// Los nombres de escenario que este change va a emitir. Para un requisito nuevo, derivados
+// del WHEN. Para uno ya archivado, los nombres archivados mandan: OpenSpec exige que un
+// MODIFIED traiga todos los escenarios actuales por nombre exacto.
+export function scenarioNames(story, existing = null) {
+  const taken = new Set();
+  const candidates = story.acceptanceCriteria.map((ac, i) => scenarioName(ac, i, taken));
+  if (!existing) return { names: candidates, dropped: [] };
+  return reconcileScenarioNames(candidates, existing.scenarios);
+}
+
+function specDelta(epic, story, { isNewCapability, lang, normative, delta, names }) {
   const out = [];
   if (isNewCapability) {
     const purpose = noDot(epic.goal) || `Agrupa el comportamiento del epic "${epic.title}".`;
@@ -107,13 +118,12 @@ function specDelta(epic, story, { isNewCapability, lang, normative }) {
     const padded = purpose.length >= 50 ? purpose : `${purpose} Cubre las stories del Epic ${epic.n}: ${epic.title}.`;
     out.push('## Purpose', '', `${padded}.`.replace(/\.\.$/, '.'), '');
   }
-  out.push('## ADDED Requirements', '');
+  out.push(`## ${delta} Requirements`, '');
   out.push(`### Requirement: ${noDot(story.title)}`);
   out.push(requirementText(story, lang, normative), '');
 
-  const taken = new Set();
   story.acceptanceCriteria.forEach((ac, i) => {
-    out.push(`#### Scenario: ${scenarioName(ac, i, taken)}`);
+    out.push(`#### Scenario: ${names[i]}`);
     if (ac.given) out.push(`- **GIVEN** ${noDot(ac.given)}`);
     if (ac.when)  out.push(`- **WHEN** ${noDot(ac.when)}`);
     if (ac.then)  out.push(`- **THEN** ${noDot(ac.then)}`);
@@ -123,10 +133,13 @@ function specDelta(epic, story, { isNewCapability, lang, normative }) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
 }
 
-function proposal(epic, story, cap, { isNewCapability }) {
-  const why = noDot(story.benefit)
+function proposal(epic, story, cap, { isNewCapability, delta, revision }) {
+  let why = noDot(story.benefit)
     ? `${capitalize(noDot(story.benefit))}.`
     : `Entrega la Story ${story.id} del Epic ${epic.n}: ${epic.title}.`;
+  // Una revision no es una story nueva: el porque de la primera version sigue valiendo, y
+  // el lector tiene que saber que esta reemplazando algo ya construido.
+  if (revision > 1) why += ` Revision ${revision} de la Story ${story.id}: el requisito ya estaba archivado y la story cambio.`;
 
   const lines = [
     '## Why', '', why, '',
@@ -143,6 +156,7 @@ function proposal(epic, story, cap, { isNewCapability }) {
 
   lines.push('### Modified Capabilities', '');
   if (isNewCapability) lines.push('', '');
+  else if (delta === 'MODIFIED') lines.push(`- \`${cap}\`: modifica el requisito "${noDot(story.title)}" (revision ${revision}).`, '');
   else lines.push(`- \`${cap}\`: agrega el requisito "${noDot(story.title)}".`, '');
 
   lines.push('## Impact', '',
@@ -191,23 +205,33 @@ function tasks(story) {
 /**
  * @param {Set<string>} existingCapabilities capabilities ya presentes en openspec/specs/
  *        o ya declaradas por un change anterior de este mismo lote.
+ * @param {object} [opts]
+ * @param {{name:string, scenarios:string[]}|null} [opts.existingRequirement] el requisito tal
+ *        como esta en el spec principal (ya archivado). Si existe, el delta es MODIFIED.
+ * @param {number} [opts.revision] 1 la primera vez; n+1 tras n archives de la misma story.
  */
-export function emitChange(epic, story, existingCapabilities, lang, normative = 'shall') {
+export function emitChange(epic, story, existingCapabilities, lang, normative = 'shall', opts = {}) {
   const cap = capabilityPath(epic);
   const isNewCapability = !existingCapabilities.has(cap);
-  const id = changeId(story);
+  const existing = opts.existingRequirement || null;
+  const revision = opts.revision || 1;
+  const delta = existing ? 'MODIFIED' : 'ADDED';
+  const id = revisedId(changeId(story), revision);
+  const { names, dropped } = scenarioNames(story, existing);
 
   const files = {
-    'proposal.md': proposal(epic, story, cap, { isNewCapability }),
+    'proposal.md': proposal(epic, story, cap, { isNewCapability, delta, revision }),
     'tasks.md': tasks(story),
-    [`specs/${cap}/spec.md`]: specDelta(epic, story, { isNewCapability, lang, normative }),
+    [`specs/${cap}/spec.md`]: specDelta(epic, story, { isNewCapability, lang, normative, delta, names }),
   };
 
   return {
-    id, capability: cap, isNewCapability,
+    id, capability: cap, isNewCapability, delta, revision, dropped,
     trace: {
       changeId: id,
       capability: cap,
+      revision,
+      delta,
       bmad: { epic: epic.n, epicTitle: epic.title, story: story.id, storyTitle: story.title },
       requirements: story.requirements,
       // De donde salio cada atribucion, para que /sw:change sepa cuanto puede confiar.

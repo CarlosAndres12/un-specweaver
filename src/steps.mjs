@@ -112,6 +112,8 @@ export function gitignoreBlock(_agentsIgnored) {
                  'node_modules/', '_bmad/', '**/.openspec-target',
                  // AST puro, regenerable en segundos; el hook lo reescribe en cada commit.
                  `${VENDORS.graphify.outDir}/`,
+                 // Vista derivada de `status --html`: se regenera, no se versiona.
+                 '.un-specweaver/dashboard.html',
                  ...VENDORS.gentle.generatedProjectDirs.map((d) => `${d}/`), ''];
   // Cada vendor escribe en sitios distintos. OpenSpec ademas crea <dir-del-agente>/skills/,
   // que no aparece en la config porque BMAD manda las skills de OpenCode a .agents/skills.

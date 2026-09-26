@@ -14,8 +14,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseEpics } from './parse-epics.mjs';
-import { emitChange, capabilityPath, detectLang } from './emit-openspec.mjs';
+import { emitChange, capabilityPath, changeId, detectLang } from './emit-openspec.mjs';
 import { planSprint, renderSprintPlan } from './plan-sprint.mjs';
+import { mergeTrace, mergeTasks, readMainSpec, normalizeName, archivedRevisions, appendLedger, sha256 } from './history.mjs';
+import { findDecisionSources } from './decisions.mjs';
 
 // BMAD escribe epics.md en {planning_artifacts}, que es configurable (--set bmm.planning_artifacts).
 // Hardcodear la ruta fue un error: en una instalacion real quedo en
@@ -59,6 +61,11 @@ export function findPlanningArtifacts(root) {
   }
   const epics = findEpics(root);
   for (const f of epics) out.push({ kind: 'epics', what: 'stories y criterios — fuente de los changes', file: f });
+  // Las decisiones tomadas al conversar. Antes se excluian a proposito y /sw:change podia
+  // proponer algo ya descartado con motivo verificado.
+  for (const d of findDecisionSources(root, base)) {
+    out.push({ kind: 'decisions', what: 'decisiones, cambios y descartes registrados al conversar — `un-specweaver history <FR>` los cruza', file: d.file });
+  }
   return out;
 }
 
@@ -187,19 +194,48 @@ function main() {
   }
 
   const trace = [];
+  const ledger = [];
   let written = 0, skipped = 0;
+  const mainSpecs = new Map();     // capability -> requisitos ya archivados (cache por corrida)
+  const failures = [];
 
   for (const { epic, story } of selected) {
-    const change = emitChange(epic, story, existing, lang, opts.normative);
+    const cap = capabilityPath(epic);
+    if (!mainSpecs.has(cap)) mainSpecs.set(cap, readMainSpec(root, cap));
+    // Si el requisito ya vive en el spec principal, la story ya se construyo y archivo:
+    // el delta es MODIFIED y el change lleva revision. Verificado contra OpenSpec 1.10:
+    // un ADDED sobre un requisito existente se rechaza en archive ("already exists").
+    const existingRequirement = mainSpecs.get(cap).get(normalizeName(story.title)) || null;
+    const baseId = changeId(story);
+    const revision = existingRequirement ? archivedRevisions(root, baseId) + 1 : 1;
+
+    const change = emitChange(epic, story, existing, lang, opts.normative, { existingRequirement, revision });
     existing.add(change.capability);          // la siguiente story del epic ya no es "New"
+
+    // OpenSpec no permite quitar escenarios en un MODIFIED (protege contra perdida silenciosa).
+    // Emitir el change igual produciria uno que no se puede archivar: mejor fallar aqui y decir que hacer.
+    if (change.dropped.length) {
+      failures.push(`Story ${story.id}: el requisito ya esta archivado y la story perdio ${change.dropped.length} escenario(s): ${change.dropped.map((d) => `"${d}"`).join(', ')}.\n` +
+        `    OpenSpec no permite quitarlos en un MODIFIED. Opciones: conservar esos criterios en la story, o retirar el requisito\n` +
+        `    con un change manual (## REMOVED Requirements), archivarlo, y volver a correr el puente.`);
+      continue;
+    }
     trace.push(change.trace);
 
     const dir = path.join(changesRoot, change.id);
+    const entry = { changeId: change.id, story: story.id, capability: change.capability, revision: change.revision, delta: change.delta };
     if (fs.existsSync(dir) && !opts.force) {
       console.log(`  omitido  ${change.id}  (ya existe; usa --force)`);
+      ledger.push({ ...entry, action: 'skipped' });
       skipped++;
       continue;
     }
+
+    // --force regenera el contrato, no el progreso: las casillas marcadas se conservan por
+    // texto de tarea, y las que ya no existen se reportan en vez de desaparecer en silencio.
+    const prevTasks = fs.existsSync(path.join(dir, 'tasks.md')) ? fs.readFileSync(path.join(dir, 'tasks.md'), 'utf8') : '';
+    const merged = mergeTasks(prevTasks, change.files['tasks.md']);
+    change.files['tasks.md'] = merged.md;
 
     for (const [rel, content] of Object.entries(change.files)) {
       const file = path.join(dir, rel);
@@ -207,26 +243,47 @@ function main() {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, content, 'utf8');
     }
-    console.log(`  ${opts.dryRun ? '[dry] ' : ''}${change.id}  ->  capability \`${change.capability}\`${change.isNewCapability ? ' (nueva)' : ''}, ${change.trace.scenarios} escenario(s)`);
+    const tag = change.delta === 'MODIFIED' ? ` [MODIFIED, revision ${change.revision}]` : '';
+    console.log(`  ${opts.dryRun ? '[dry] ' : ''}${change.id}  ->  capability \`${change.capability}\`${change.isNewCapability ? ' (nueva)' : ''}, ${change.trace.scenarios} escenario(s)${tag}`);
+    if (merged.kept) console.log(`           ${merged.kept} tarea(s) hecha(s) conservada(s)${merged.lost.length ? `; ${merged.lost.length} perdida(s) porque su texto cambio: ${merged.lost.map((t) => `"${t}"`).join(', ')}` : ''}`);
+    ledger.push({ ...entry, action: 'written', tasksKept: merged.kept, tasksLost: merged.lost });
     written++;
+  }
+
+  if (failures.length) {
+    for (const f of failures) console.error(`\n  error: ${f}`);
+    console.error(`\n${failures.length} story/ies no se pudieron regenerar. Nada de esas stories se escribio.`);
+    process.exit(1);
   }
 
   const plan = planSprint(doc);
   if (!opts.dryRun) {
     const traceDir = path.join(root, '.un-specweaver');
+    const traceFile = path.join(traceDir, 'trace.json');
     fs.mkdirSync(traceDir, { recursive: true });
-    fs.writeFileSync(path.join(traceDir, 'trace.json'), JSON.stringify({
+    // Se fusiona con lo que habia: `--only 1.2` no puede borrar la trazabilidad de las demas.
+    let prev = null;
+    try { prev = JSON.parse(fs.readFileSync(traceFile, 'utf8')); } catch { /* primera corrida */ }
+    fs.writeFileSync(traceFile, JSON.stringify(mergeTrace(prev, {
       source: path.relative(root, path.resolve(opts.input)),
       project: doc.projectName,
       lang,
       requirements: doc.requirements,
       changes: trace,
-    }, null, 2) + '\n', 'utf8');
+    }), null, 2) + '\n', 'utf8');
     fs.writeFileSync(path.join(traceDir, 'sprint-plan.md'), renderSprintPlan(doc, plan) + '\n', 'utf8');
+    // El ledger es el unico archivo con fecha: es historia. Una linea por corrida.
+    appendLedger(root, {
+      at: new Date().toISOString(),
+      source: path.relative(root, path.resolve(opts.input)),
+      sourceHash: sha256(source),
+      options: { only: opts.only, epic: opts.epic, force: opts.force, lang, normative: opts.normative },
+      changes: ledger,
+    });
   }
 
   console.log(`\n${written} change(s) generado(s), ${skipped} omitido(s). ${plan.waves.length} ola(s) de trabajo paralelo.`);
-  if (!opts.dryRun) console.log('Trazabilidad en .un-specweaver/trace.json — plan en .un-specweaver/sprint-plan.md');
+  if (!opts.dryRun) console.log('Trazabilidad en .un-specweaver/trace.json — plan en .un-specweaver/sprint-plan.md — historial en .un-specweaver/changelog.jsonl');
   if (plan.cycles.length) { console.error(`\nCiclo de dependencias en: ${plan.cycles.join(', ')}`); process.exit(1); }
 }
 

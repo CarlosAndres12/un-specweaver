@@ -47,7 +47,7 @@ Duplicar entre capas es como empiezan a contradecirse.
 
 ## El flujo, en comandos
 
-Nueve comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en OpenCode, `/sw-new`.
+Diez comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en OpenCode, `/sw-new`.
 
 ```
                   ┌─ /sw:new ─────────────────────────────────┐
@@ -75,6 +75,7 @@ Nueve comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en Op
 | `/sw:ticket <n>` | issue de GitHub: clasifica y enruta a uno de los dos anteriores |
 | `/sw:sprint` | recalcula que se puede paralelizar segun dependencias reales |
 | `/sw:sync` | actualizar las herramientas de forma controlada |
+| `/sw:status` | en que va el proyecto: fases, changes con avance, olas, requisitos inestables, historial |
 | `/sw:doctor` | salud del entorno y coherencia del flujo |
 
 ---
@@ -332,11 +333,35 @@ Quince comandos. La ayuda sale del mismo codigo que ejecuta, asi que no puede me
 npx un-specweaver --help              # ayuda completa, sale 1 sin comando
 npx un-specweaver --version           # version, sale 0
 npx un-specweaver <comando> --help    # ayuda completa, sale 0 (salvo bridge y dashboard)
+npx un-specweaver history [FR-21]     # historia de un requisito, o ranking de los que mas cambian
+npx un-specweaver status [dir]        # en que va: fases, changes, sprint, requisitos, decisiones
+npx un-specweaver status --open       # lo mismo como .un-specweaver/dashboard.html, en el navegador
 ```
 
 Sin comando imprime la ayuda y sale 1; comando o flag desconocido sale 2. Ojo: `--help`
 junto a un comando imprime la ayuda global (no una por comando); solo `dashboard` tiene
 ayuda propia y `bridge` rechaza `--help` (ver abajo).
+
+`context` tambien lista los `.memlog.md` y las `sprint-change-proposal-*.md`, ademas de los
+artefactos de planeacion.
+
+`history` cruza tres fuentes que ya existian y nadie leia junto: los **`.memlog.md`** que BMAD
+escribe al conversar (cada artefacto lleva el suyo, con entradas `(decision)`, `(change)`,
+`(override)`, `(assumption)`… y el motivo escrito), las **propuestas de cambio de sprint** de
+`bmad-correct-course` (tablas de impacto por FR), y el **`changelog.jsonl`** del puente. Sin
+argumento, un ranking de los requisitos que mas han cambiado despues de nacer; con un id, la
+linea de tiempo completa con archivo y motivo. Es una vista: no guarda nada. En un proyecto real
+(150 entradas, 34 ids citados) el primero del ranking era un FR con un `(override)` que decia
+exactamente por que se descarto lo que el asistente habia sugerido — y `/sw:change` no lo veia.
+
+`status` junta todo en una pantalla: las seis fases con el artefacto que las prueba, los changes
+con su avance (casillas de `tasks.md`) y su estado (pendiente, en curso, tareas completas,
+archivado), las olas del sprint con que se puede empezar ya y que esta bloqueado por quien, los
+requisitos con cobertura e inestabilidad, las decisiones por tipo, y un historial que mezcla
+memlogs, corridas del puente y archives. `--html` escribe un archivo **autocontenido** —CSS y JS
+inline, sin CDN ni servidor— que se abre offline, en CI, o lo abre un compañero sin instalar nada.
+Es una vista: **no guarda nada** y se regenera cada vez, asi que va al `.gitignore`. Si algo se ve
+mal ahi, esta mal en la fuente.
 
 | Comando | Que hace |
 |---|---|
@@ -351,6 +376,8 @@ ayuda propia y `bridge` rechaza `--help` (ver abajo).
 | `build [...]` | valida specs o corre `bridge` con tus flags |
 | `change` / `bug` / `ticket` | te dicen que comando del agente correr |
 | `context [dir]` | lista los artefactos de planeacion a cargar |
+| `history [FR-21]` | historial de decisiones por requisito, o ranking de los que mas cambian |
+| `status [dir]` | en que va el proyecto: fases, changes, sprint, requisitos, decisiones |
 | `vendors` | muestra las versiones pineadas |
 | `dashboard` / `ui` | dashboard web multi-proyecto |
 
@@ -444,6 +471,21 @@ npx un-specweaver vendors          # pin actual: bmad, openspec, gentle
   los cargue en vez de adivinarlos. Sin artefactos te manda a `/sw:new`.
 - Para subir un vendor: edita `src/vendors.json`, publica, y `doctor` reporta el drift.
 
+### `history` / `status`
+
+```bash
+npx un-specweaver history [FR-21]                # ranking de inestabilidad, o el detalle de un id
+npx un-specweaver status [dir] [--html] [--open] [--json]
+```
+
+- `history` cruza `.memlog.md` (BMAD), las propuestas de cambio de sprint y `changelog.jsonl`
+  (el puente) por requisito. Sin argumento imprime el ranking de los que mas cambiaron; con un
+  id, la linea de tiempo completa. Es una vista: no guarda nada.
+- `status` junta las seis fases, el avance de los changes, las olas del sprint, la cobertura de
+  requisitos y el historial de decisiones en una sola pantalla. `--html` escribe
+  `.un-specweaver/dashboard.html` (autocontenido, va al `.gitignore`); `--open` ademas lo abre;
+  `--json` imprime el modelo crudo.
+
 ### `dashboard` / `ui`
 
 ```bash
@@ -478,7 +520,7 @@ defecto). `--help` / `-h` y `--version` / `-v` tambien valen aqui.
    lo retira
 8. graphify pineado (via `uv` o `pipx`), la skill dentro del proyecto para cada agente,
    `.graphifyignore` (solo codigo), los hooks acotados, el grafo AST y el hook de post-commit
-9. Los nueve comandos `/sw:*` en el formato de cada agente, la skill `un-specweaver` en todos los
+9. Los diez comandos `/sw:*` en el formato de cada agente, la skill `un-specweaver` en todos los
    dirs de skills, y `docs/architecture-base.md`
 
 ### Prerequisitos que la herramienta NO resuelve sola
@@ -527,7 +569,7 @@ reemplaza en vez de duplicarlo). En un proyecto real la diferencia es de **499 a
 | `openspec/` — los specs son el producto | `_bmad/`, `node_modules/` |
 | `_bmad-output/` — PRD y epics | `.claude/skills/bmad-*/`, `.agents/skills/bmad-*/` |
 | `docs/architecture-base.md` | `.claude/commands/sw/`, `.opencode/commands/sw-*.md` |
-| `.un-specweaver/` — config y trazabilidad | skills y comandos de OpenSpec |
+| `.un-specweaver/` — config, trazabilidad, ledger | skills y comandos de OpenSpec; `.un-specweaver/dashboard.html` |
 | `.engram/config.json` — nombre del proyecto en Engram | `graphify-out/` — AST regenerable; el hook lo reescribe en cada commit |
 | `.graphifyignore` — el alcance del grafo es regla del equipo | `.claude/skills/graphify/`, `.opencode/skills/graphify/` |
 
@@ -566,6 +608,29 @@ npx @fission-ai/openspec validate --all --strict
 
 Opciones: `--only 1.2` · `--epic 1` · `--dry-run` · `--force` · `--strict` · `--lang es|en` · `--normative shall|debe`
 
+### Lo que el puente no destruye
+
+Cuatro perdidas reproducidas y cerradas, todas verificadas contra OpenSpec 1.10:
+
+| Situacion | Antes | Ahora |
+|---|---|---|
+| `bridge --only 1.2` | `trace.json` quedaba con **una** story | se fusiona por story: las demas conservan su entrada |
+| `--force` sobre un change en curso | `tasks.md` volvia a `[ ]` | las casillas marcadas se conservan **por texto de tarea**; las que ya no existen se reportan |
+| story ya **archivada** que cambia | salia como `ADDED` y OpenSpec rechazaba el archive (`already exists`) | sale como `MODIFIED`, con id `-r2`, `-r3`… y `revision` en `trace.json` |
+| ¿que corrida regenero que? | nadie lo sabia | `changelog.jsonl`: fecha, opciones, hash del `epics.md`, changes escritos u omitidos, tareas conservadas y perdidas |
+
+Sobre `MODIFIED` hay una regla de OpenSpec que conviene conocer: el bloque tiene que traer **todos
+los escenarios actuales por nombre exacto**, y no permite quitar ninguno (protege contra perdida
+silenciosa). Como el puente nombra los escenarios con el texto del `WHEN`, una story reescrita
+cambiaria los nombres y el archive fallaria. Por eso, para un requisito ya archivado, **los nombres
+archivados mandan**: coincidencia exacta primero, posicion despues; el contenido si se actualiza.
+Si la story **perdio** un escenario, el puente falla antes de escribir y dice como salir (un change
+manual `## REMOVED Requirements`, archivarlo, y volver a correr). Emitir un change que no se puede
+archivar seria peor que no emitirlo.
+
+`changelog.jsonl` es el unico archivo del puente con fecha, a proposito: `trace.json` y los changes
+siguen siendo deterministas byte a byte.
+
 ### Mapeo
 
 | BMAD | OpenSpec |
@@ -576,6 +641,8 @@ Opciones: `--only 1.2` · `--epic 1` · `--dry-run` · `--force` · `--strict` �
 | `I want {want}` | `proposal.md` → `## What Changes` + `### Requirement:` |
 | bloque `Given/When/Then/And` | `#### Scenario:` + `- **GIVEN/WHEN/THEN/AND**` |
 | FR Coverage Map | `.un-specweaver/trace.json` |
+| story ya archivada, cambiada | `## MODIFIED Requirements`, change `<id>-r<N>` |
+| cada corrida | una linea en `.un-specweaver/changelog.jsonl` |
 
 Funciona en **espanol e ingles**, autodetectado por puntaje de tokens (una palabra suelta que
 "parezca" espanola no voltea un documento ingles). `--lang` fuerza el idioma.
@@ -637,12 +704,13 @@ Una sola duena por dato:
 | Decisiones y rationale (el *por que*) | Engram |
 | Estructura del codigo (el *donde*) | grafo de graphify |
 | Trazabilidad FR ↔ story ↔ change | `.un-specweaver/trace.json` |
+| Historia de un requisito (que cambio y por que) | `.memlog.md` + `sprint-change-proposal-*.md` + `changelog.jsonl`, via `history` |
 | Arquitectura de la organizacion | `docs/architecture-base.md` |
 
 ## Desarrollo
 
 ```bash
-npm test                    # 123 tests
+npm test                    # 143 tests
 npm pack                    # ~23 kB
 node bin/un-specweaver.mjs init --dry-run
 ```
@@ -654,10 +722,12 @@ implementando `status()` y `plan()`; `--dry-run`, la idempotencia y `doctor` sal
 
 | Pieza | Estado |
 |---|---|
-| `bridge/` — story → change | **funciona**, es/en, validado contra `openspec validate --all --strict` |
+| `bridge/` — story → change | **funciona**, es/en, validado contra `openspec validate --all --strict`; `MODIFIED` + revisiones + ledger verificados contra `openspec archive` |
 | `init` / `doctor` — instalador multi-agente | **funciona**, probado end-to-end desde el tarball |
-| 9 comandos `/sw:*` | **funciona**, es/en, Claude Code + OpenCode |
+| 10 comandos `/sw:*` | **funciona**, es/en, Claude Code + OpenCode |
 | Skill `un-specweaver` | **funciona**, es/en, todos los agentes |
+| `history` — decisiones por requisito | **funciona** — memlogs + propuestas de cambio + ledger; probado sobre un proyecto real |
+| `status` / dashboard | **funciona** — terminal y HTML autocontenido, es/en |
 | Mensajes del CLI bilingües | **funciona**, 86 cadenas, es/en |
 | graphify (mapa del codigo, solo codigo) | **funciona** — instalado, acotado, grafo AST y hook; verificado contra graphify 0.8.37 |
 | Gentle-AI (binario) | **funciona** — instala via Homebrew |

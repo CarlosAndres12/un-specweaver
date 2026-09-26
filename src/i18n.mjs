@@ -27,7 +27,8 @@ Los comandos, para tenerlos a mano:
   /sw:change "<req>"   requerimiento nuevo (cambia lo acordado)
   /sw:bug "<defecto>"  defecto (lo acordado esta bien, el codigo no)
   /sw:ticket <n>       issue de GitHub: clasifica y enruta
-  /sw:doctor           salud del entorno y del flujo`,
+  /sw:doctor           salud del entorno y del flujo
+  /sw:status           en que va el proyecto (o: npx un-specweaver status --open)`,
     'prefs.header': `\n  Configuracion del proyecto — Enter toma el valor por defecto [1].\n  Queda en .un-specweaver/config.json y no se vuelve a preguntar.\n`,
     'prefs.ask': '  > ',
     'prefs.agentsHeader': '\n  Agentes a configurar (detectados en tu maquina)\n',
@@ -209,7 +210,8 @@ The commands, for reference:
   /sw:change "<req>"   new requirement (changes what was agreed)
   /sw:bug "<defect>"   defect (what was agreed is fine, the code is not)
   /sw:ticket <n>       GitHub issue: classify and route
-  /sw:doctor           environment and flow health`,
+  /sw:doctor           environment and flow health
+  /sw:status           where the project stands (or: npx un-specweaver status --open)`,
     'prefs.header': `\n  Project setup — Enter takes the default [1].\n  Stored in .un-specweaver/config.json and never asked again.\n`,
     'prefs.ask': '  > ',
     'prefs.agentsHeader': '\n  Agents to configure (detected on your machine)\n',

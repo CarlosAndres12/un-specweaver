@@ -211,7 +211,7 @@ const CMDS = fs.readdirSync(path.join(LAYER, 'commands', 'es')).map((f) => f.rep
 
 test('existen los comandos, en los dos idiomas', () => {
   // bug y change son flujos separados a proposito: uno cambia lo acordado, el otro no.
-  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'dashboard', 'doctor', 'new', 'sprint', 'sync', 'ticket', 'update']);
+  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'dashboard', 'doctor', 'new', 'sprint', 'status', 'sync', 'ticket', 'update']);
   const en = fs.readdirSync(path.join(LAYER, 'commands', 'en')).map((f) => f.replace(/\.md$/, '')).sort();
   assert.deepEqual(en, CMDS, 'es y en deben tener exactamente los mismos comandos');
 });
@@ -1059,6 +1059,18 @@ test('graphify no es una preferencia: ningun comando la consulta ni init la preg
     const skill = fs.readFileSync(path.join(LAYER, 'skills', 'un-specweaver', `SKILL.${lang}.md`), 'utf8');
     assert.match(skill, lang === 'es' ? /Nunca preguntes estas cosas/ : /Never ask about these/,
       `SKILL.${lang}: las preferencias no se re-preguntan en conversacion`);
+  }
+});
+
+test('/sw:change consulta la historia del requisito antes de clasificar', () => {
+  // Caso real: 150 entradas de memlog, un (override) con el motivo exacto de un descarte, y el
+  // comando no lo veia. Reabrir una decision sin saber que existio es lo que esto evita.
+  for (const lang of ['es', 'en']) {
+    const src = fs.readFileSync(path.join(LAYER, 'commands', lang, 'change.md'), 'utf8');
+    assert.match(src, /un-specweaver history/, `${lang}: debe consultar la historia`);
+    assert.ok(src.indexOf('un-specweaver history') < src.indexOf(lang === 'es' ? 'Clasifica el requerimiento' : 'Classify the requirement'), `${lang}: antes de clasificar`);
+    const skill = fs.readFileSync(path.join(LAYER, 'skills', 'un-specweaver', `SKILL.${lang}.md`), 'utf8');
+    assert.match(skill, /memlog/, `SKILL.${lang}: la tabla de fuentes debe nombrar el memlog`);
   }
 });
 
