@@ -152,7 +152,7 @@ function readExistingCapabilities(root) {
   return found;
 }
 
-function main() {
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
   if (!opts.input) {
@@ -284,6 +284,10 @@ function main() {
 
   console.log(`\n${written} change(s) generado(s), ${skipped} omitido(s). ${plan.waves.length} ola(s) de trabajo paralelo.`);
   if (!opts.dryRun) console.log('Trazabilidad en .un-specweaver/trace.json — plan en .un-specweaver/sprint-plan.md — historial en .un-specweaver/changelog.jsonl');
+  if (!opts.dryRun) {
+    const { refreshDashboard } = await import('../src/status/collect.mjs');
+    if (await refreshDashboard(root)) console.log('Dashboard actualizado: .un-specweaver/dashboard.html');
+  }
   if (plan.cycles.length) { console.error(`\nCiclo de dependencias en: ${plan.cycles.join(', ')}`); process.exit(1); }
 }
 

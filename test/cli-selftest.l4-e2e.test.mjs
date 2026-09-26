@@ -201,7 +201,9 @@ test('L4 — doctor limpio sale 0 sin DRIFT; tras deriva reporta DRIFT con exit 
       assert.ok(!clean.stdout.includes('DRIFT'), 'doctor limpio no debe reportar deriva');
       // Deriva hermética sin binarios externos: se adultera la versión
       // registrada en el estado (presente pero recorded !== pinned ⇒ DRIFT).
-      const stateFile = path.join(proj, '.un-specweaver', 'config.json');
+      // vendors vive en local.json (maquina): config.json solo guarda lo compartido
+      // por el equipo (version, preferences, pruneExtra).
+      const stateFile = path.join(proj, '.un-specweaver', 'local.json');
       const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
       state.vendors.bmad = 'bmad-method@0.0.0-drift';
       fs.writeFileSync(stateFile, JSON.stringify(state, null, 2) + '\n', 'utf8');

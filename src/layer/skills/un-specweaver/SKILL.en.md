@@ -22,6 +22,7 @@ The bridge between them is deterministic: do not improvise it, run it.
 | `/sw:build <change-id>` | build a change |
 | `/sw:sync` | update vendors in a controlled way |
 | `/sw:status` | where the project stands: phases, changes, sprint, requirements, decisions |
+| `/sw:close [id]` | close finished stories: validate and archive their spec (the baseline) |
 | `/sw:doctor` | environment and flow diagnostics |
 | `/sw:dashboard` | local dashboard (alias `ui`, `--open`) |
 
@@ -85,7 +86,7 @@ would otherwise assume.
 `.un-specweaver/config.json` stores what the user chose at init time:
 
 ```json
-"preferences": { "lang": "es", "agents": ["claude-code", "opencode"] }
+"preferences": { "lang": "es" }
 ```
 
 **Read them before deciding on your own.** Never ask about these in conversation: they are

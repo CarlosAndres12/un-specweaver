@@ -42,7 +42,12 @@ Antes de repartir trabajo paralelo, revisa las stories de la ola: si dos tocan l
 sistema y estan en epics distintos, verificalo a mano contra `.un-specweaver/trace.json`. Es el unico
 punto ciego conocido de este flujo, y es barato de revisar.
 
-## Paso 5 — Opcional
+## Paso 5 — Mostrarlo
+
+`npx un-specweaver status --open`: la seccion Flujo con filtro por epic y el canvas de stories es
+la version visual de este reparto; sirve para acordarlo con el equipo.
+
+## Paso 6 — Opcional
 
 `bmad-sprint-planning` para la ceremonia completa (capacidad, prioridad de negocio, compromiso).
 El plan de olas le da las dependencias tecnicas; BMAD le pone el resto.

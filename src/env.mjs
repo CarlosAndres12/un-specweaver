@@ -176,15 +176,36 @@ export function isGitRepo(dir) {
   catch { return false; }
 }
 
+// Dos archivos, porque son dos cosas. `config.json` es del PROYECTO (idioma, poda extra) y va
+// al repo: el equipo comparte la decision. `local.json` es de la MAQUINA (que agentes tiene
+// cada quien, rutas de binarios, que paso instalo, cuando) y se ignora: commitearlo era un
+// diff por compañero en cada PR — señalado en revision de codigo, y con razon.
+const PROJECT_KEYS = ['version', 'preferences', 'pruneExtra'];
+
 export function readState(root) {
-  const f = path.join(root, '.un-specweaver', 'config.json');
-  try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; }
+  const dir = path.join(root, '.un-specweaver');
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { return null; } };
+  const config = read('config.json');
+  if (!config) return null;
+  const local = read('local.json') || {};
+  // Un config.json de 0.x traia todo junto: se lee igual, y el proximo init lo separa.
+  const merged = { ...config, ...local };
+  merged.preferences = { ...(config.preferences || {}), ...(local.agents ? { agents: local.agents } : {}) };
+  if (config.lang && !merged.preferences.lang) merged.preferences.lang = config.lang;
+  return merged;
 }
 
 export function writeState(root, state) {
   const dir = path.join(root, '.un-specweaver');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(state, null, 2) + '\n', 'utf8');
+  const { agents: _prefAgents, ...projectPrefs } = state.preferences || {};
+  const config = { version: 2, preferences: projectPrefs };
+  if (state.pruneExtra) config.pruneExtra = true;
+  const local = {};
+  for (const [k, v] of Object.entries(state)) if (!PROJECT_KEYS.includes(k) && k !== 'lang') local[k] = v;
+  if (state.preferences?.agents) local.agents = state.preferences.agents;
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'local.json'), JSON.stringify(local, null, 2) + '\n', 'utf8');
 }
 
 // Traduce nuestros ids canonicos a los que espera cada vendor.

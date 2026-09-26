@@ -42,7 +42,12 @@ Before handing out parallel work, review the wave's stories: if two touch the sa
 system and sit in different epics, verify by hand against `.un-specweaver/trace.json`. It is this
 flow's only known blind spot, and it is cheap to check.
 
-## Step 5 — Optional
+## Step 5 — Show it
+
+`npx un-specweaver status --open`: the Flow section with the epic filter and the stories canvas is
+the visual version of this split; useful to agree on it with the team.
+
+## Step 6 — Optional
 
 `bmad-sprint-planning` for the full ceremony (capacity, business priority, commitment).
 The wave plan gives it the technical dependencies; BMAD supplies the rest.

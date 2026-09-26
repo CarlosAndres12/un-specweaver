@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { collectStatus, taskProgress, readChanges, sprintStatus } from '../src/status/collect.mjs';
 import { renderTerminal, renderHtml } from '../src/status/render.mjs';
 
@@ -69,6 +69,28 @@ test('el estado es una vista: se deriva de disco, no guarda nada', () => {
   assert.deepEqual(fr1.stories, ['1.1']);
   assert.equal(fr1.changes, 4);
   assert.deepEqual(s.requirements.orphans, []);
+
+  // La cobertura sale de epics.md, no del trace: un trace danado no puede decir "sin story".
+  fs.writeFileSync(path.join(dir, '.un-specweaver', 'trace.json'), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(dir, '.un-specweaver', 'trace.json'), 'utf8')), changes: [] }));
+  const s3 = collectStatus(dir);
+  assert.deepEqual(s3.requirements.rows.find((r) => r.id === 'FR001').stories, ['1.1']);
+  assert.equal(s3.metrics.requirements.coveragePct, 100);
+
+  // FR completado = todas sus stories terminadas o archivadas. FR003 lo cubre 2.1 (archivada).
+  assert.equal(s.requirements.rows.find((r) => r.id === 'FR003').done, true);
+  assert.equal(s.requirements.rows.find((r) => r.id === 'FR001').done, false, '1.1 a medias');
+  assert.equal(s.metrics.requirements.done, 1);
+  // FR005 esta eliminado en el fixture: no es vivo, no es huerfano, y el inventario viene de epics.md.
+  assert.equal(s.metrics.requirements.fr, 4); assert.equal(s.metrics.requirements.removed, 1);
+  assert.ok(s.requirements.rows.find((r) => r.id === 'FR005').removed);
+  assert.equal(s.metrics.requirements.coveragePct, 100);
+  assert.ok(s.changes[0].tasks.length > 0 && 'done' in s.changes[0].tasks[0], 'las tareas llevan texto y estado');
+  assert.equal(s.changes[0].tasks[0].n, '1.1'); assert.match(s.changes[0].tasks[0].section, /Implementacion/);
+  assert.ok(s.metrics.activity.some((d) => d.date === '2026-09-10' && d.archived === 1), 'la actividad por dia registra el archive');
+  assert.ok(s.metrics.activity.every((d) => 'commits' in d), 'los commits de git entran en la actividad (0 si no hay repo)');
+  assert.ok(s.activityDetail['2026-09-10'].archived.some((a) => a.story === '2.1'), 'el detalle por dia trae que se archivo');
+  assert.ok(s.documents.some((x) => x.memlog && x.kind === 'prds' && /FR001/.test(x.text)), 'los memlogs viajan con su texto');
+  assert.equal(s.decisions.all.length, 12, 'todas las entradas, no solo las clave');
   assert.equal(s.decisions.total, 12);
   assert.equal(s.decisions.ranking[0].id, 'FR001');
 
@@ -114,11 +136,21 @@ test('el HTML es autocontenido, bilingue y escapa lo que viene de los archivos',
   for (const lang of ['es', 'en']) {
     const html = renderHtml(s, lang);
     assert.doesNotMatch(html, /<script src=|https?:\/\/cdn|<link /, 'sin CDN ni recursos externos');
-    assert.doesNotMatch(html, /<script>alert/, 'escapado');
-    assert.match(html, /&lt;script&gt;alert/);
-    assert.match(html, lang === 'es' ? /Ola 1/ : /Wave 1/);
-    assert.match(html, /FR001/);
-    assert.match(html, /2026-09-10/);
+    assert.doesNotMatch(html, /<script>alert/, 'nada de los archivos puede cerrar el script de datos');
+    assert.match(html, /\\u003cscript>alert\(1\)\\u003c\/script>/, 'va en el JSON con < escapado; el cliente lo escapa al pintar');
+    assert.match(html, /const esc = \(x\) =>/, 'el cliente escapa todo texto que viene de archivos');
+    assert.match(html, /replace\(\/\\\*\\\*\(\[\^\*\]\+\)\\\*\\\*\/g/, 'la regex de negrita llega escapada al cliente (un \\* sin escapar la volvia un comentario)');
+    assert.match(html, lang === 'es' ? /¿Como vamos\?/ : /How are we doing\?/);
+    assert.match(html, /"id":"FR001"/, 'el modelo va embebido');
+    assert.match(html, /"archivedAt":"2026-09-10"/);
+    assert.match(html, /data-k="story"|\.blk\[data-k/, 'el flujo se dibuja en cliente');
+    assert.match(html, /cr\('fr'/, 'cadena de anillos clicable');
+    assert.match(html, lang === 'es' ? /Cuando se trabajo/ : /When work happened/);
+    assert.match(html, /\$\{d\}\\n\$\{parts\.join\('\\n'\)\}/, 'los saltos de linea del tooltip llegan escapados al cliente (un \\n crudo rompia el script)');
+    assert.match(html, /class="cal"/, 'calendario de actividad');
+    assert.match(html, /\/\^\\s\{2,\}\//, 'los backslashes de las regex del cliente sobreviven al template');
+    assert.match(html, /function mdBlock/, 'los documentos se renderizan en cliente');
+    assert.match(html, /\\u003c/, 'el JSON embebido escapa < para no cerrar el script');
   }
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -133,5 +165,60 @@ test('status desde el CLI: terminal, --html escribe el dashboard, --json el mode
   assert.ok(fs.existsSync(path.join(dir, '.un-specweaver', 'dashboard.html')));
   const j = JSON.parse(run('--json'));
   assert.equal(j.changes.length, 4);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- cerrar: validar y archivar como comando, no como recordatorio ----------------------
+import { closable, closeChanges, unarchivedDone } from '../src/close.mjs';
+
+test('closable lista solo los changes con todas las tareas marcadas y sin archivar', () => {
+  const dir = midProject();
+  assert.deepEqual(closable(dir).map((c) => c.story), [], '1.1 esta a medias; 2.1 ya archivado');
+  const t = path.join(dir, 'openspec', 'changes', 'e1s1-registro-de-proveedor-con-nit', 'tasks.md');
+  fs.writeFileSync(t, fs.readFileSync(t, 'utf8').replace(/- \[ \]/g, '- [x]'));
+  assert.deepEqual(closable(dir).map((c) => c.story), ['1.1']);
+  assert.equal(unarchivedDone(dir), 1);
+  assert.equal(collectStatus(dir).metrics.changes.doneUnarchived, 1);
+  assert.match(renderHtml(collectStatus(dir), 'es'), /terminadas sin cerrar/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('closeChanges valida antes de archivar y no archiva lo que no valida', () => {
+  const calls = [];
+  const run = (args) => { calls.push(args.join(' ')); return args[0] === 'validate' && args[1] === 'malo' ? { status: 1, out: 'Requirement X is missing SHALL' } : { status: 0, out: 'archived' }; };
+  const r = closeChanges('/x', ['bueno', 'malo'], { run });
+  assert.deepEqual(calls, ['validate bueno --strict', 'archive bueno --yes', 'validate malo --strict'], 'malo no llega a archive');
+  assert.deepEqual(r.map((x) => [x.id, x.ok, x.step]), [['bueno', true, 'archive'], ['malo', false, 'validate']]);
+  assert.match(r[1].out, /SHALL/);
+  assert.ok(closeChanges('/x', ['a'], { dryRun: true, run: () => { throw new Error('no debe correr'); } })[0].dryRun);
+});
+
+test('close desde el CLI: sin ids lista; doctor avisa mientras haya terminadas sin cerrar', () => {
+  const dir = midProject();
+  const t = path.join(dir, 'openspec', 'changes', 'e1s1-registro-de-proveedor-con-nit', 'tasks.md');
+  fs.writeFileSync(t, fs.readFileSync(t, 'utf8').replace(/- \[ \]/g, '- [x]'));
+  const out = execFileSync('node', [CLI, 'close'], { cwd: dir, stdio: 'pipe' }).toString();
+  assert.match(out, /1 change\(s\) con todas las tareas completas/);
+  assert.match(out, /e1s1-registro-de-proveedor-con-nit/);
+  const dry = execFileSync('node', [CLI, 'close', '--done', '--dry-run'], { cwd: dir, stdio: 'pipe' }).toString();
+  assert.match(dry, /\[dry\] e1s1-registro-de-proveedor-con-nit/);
+  // spawnSync (no execFileSync): este fixture nunca corrio `init`, asi que doctor
+  // tambien reporta bloqueo de plan (bmad/layer faltantes) y sale !=0 — el punto
+  // aqui es el aviso de unarchivedDone, no el exit code general de doctor.
+  const doc = spawnSync('node', [CLI, 'doctor'], { cwd: dir, stdio: 'pipe' }).stdout.toString();
+  assert.match(doc, /1 story\/ies con todas las tareas completas SIN archivar/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('bridge y close regeneran el dashboard si ya existe; si no existe, no lo inventan', () => {
+  const dir = midProject();
+  let out = execFileSync('node', [BRIDGE, '--force'], { cwd: dir, stdio: 'pipe' }).toString();
+  assert.doesNotMatch(out, /Dashboard actualizado/);
+  execFileSync('node', [CLI, 'status', '--html'], { cwd: dir, stdio: 'pipe' });
+  const f = path.join(dir, '.un-specweaver', 'dashboard.html');
+  fs.writeFileSync(f, 'viejo');
+  out = execFileSync('node', [BRIDGE, '--force'], { cwd: dir, stdio: 'pipe' }).toString();
+  assert.match(out, /Dashboard actualizado/);
+  assert.ok(fs.readFileSync(f, 'utf8').length > 1000, 'regenerado');
   fs.rmSync(dir, { recursive: true, force: true });
 });

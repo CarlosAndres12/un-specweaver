@@ -111,9 +111,15 @@ Offer them at close; do not impose them.
 1. Tick the `tasks.md` boxes that are genuinely done
 2. `npx @fission-ai/openspec validate --all --strict`
 3. Record the implementation decisions that are not obvious from the code (see "Memory" below)
-4. `openspec archive <change-id>` once delivered — that folds the delta into the main spec
+4. **Close the story**: `npx un-specweaver close <change-id>`. It validates and archives; the
+   delta moves into `openspec/specs/` and becomes the baseline. **Not optional, not "when
+   delivered"**: a finished story left unclosed leaves `/sw:change` with nothing to measure
+   against. If you decide not to close (the story awaits review, say), say so explicitly and
+   why; `doctor` keeps flagging it until it is closed
 5. The graphify hook rebuilds the graph on commit. If you have not committed yet, run `graphify update .`
    so the next change sees the new code
+6. `/sw:status` (or `npx un-specweaver status --open`) to see what is done and what is next: the
+   current wave, what can start now, and whether anything was finished but not closed
 
 ## Decision memory (Engram)
 

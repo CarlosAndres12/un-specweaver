@@ -26,7 +26,13 @@ test('extrae epics, stories y el inventario de requisitos', () => {
   assert.equal(doc.projectName, 'Portal de Proveedores');
   assert.equal(doc.epics.length, 2);
   assert.deepEqual(doc.epics.map((e) => e.stories.length), [2, 2]);
-  assert.deepEqual(doc.requirements.functional.map((r) => r.id), ['FR001', 'FR002', 'FR003', 'FR004']);
+  assert.deepEqual(doc.requirements.functional.map((r) => r.id), ['FR001', 'FR002', 'FR003', 'FR004', 'FR005']);
+  // Un requisito tachado con ELIMINADO sigue en el inventario (el id no se reutiliza) pero
+  // marcado: no cuenta como vivo ni aparece como "sin cobertura".
+  const fr5 = doc.requirements.functional.find((r) => r.id === 'FR005');
+  assert.equal(fr5.removed, true); assert.equal(fr5.removedAt, '2026-09-03');
+  assert.equal(fr5.text, 'El proveedor exporta sus órdenes a Excel');
+  assert.ok(!doc.warnings.some((w) => /FR005/.test(w)), 'eliminado no es huerfano');
   assert.deepEqual(doc.requirements.nonFunctional.map((r) => r.id), ['NFR001']);
   assert.deepEqual(doc.requirements.ux.map((r) => r.id), ['UX-DR01']);
 });
@@ -44,6 +50,11 @@ test('agrupa los criterios Given/When/Then y sus multiples And', () => {
   assert.equal(s.acceptanceCriteria[0].and.length, 2);
   assert.match(s.acceptanceCriteria[0].given, /^que estoy en la página de registro/);
   assert.match(s.acceptanceCriteria[1].then, /NIT ya registrado/);
+});
+
+test('AD-n tambien cuenta como referencia: una story de andamiaje puede cubrir solo una decision', () => {
+  const d = parseEpics('# P\n\n## Epic 1: X\n\n### Story 1.1: Andamiaje\n\n**Cubre:** Additional Requirements · AD-6\n\nAs a dev,\nI want base,\nSo that build.\n\n**Acceptance Criteria:**\n\n**Given** a\n**When** b\n**Then** c\n');
+  assert.deepEqual(d.epics[0].stories[0].requirements, ['AD-6']);
 });
 
 test('recoge los IDs de requisito citados en la story', () => {

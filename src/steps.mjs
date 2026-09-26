@@ -96,6 +96,18 @@ const commandDirs = (agents) => [...new Set([
   ...agentHomes(agents).map((h) => path.join(h, 'commands')),
 ])];
 
+// El dashboard se regenera con cada commit, como el grafo de graphify: una vista que solo se
+// actualiza cuando alguien se acuerda es una vista vieja.
+export const DASHBOARD_HOOK_MARK = '# un-specweaver: dashboard';
+export const DASHBOARD_HOOK = `${DASHBOARD_HOOK_MARK}
+[ -f .un-specweaver/dashboard.html ] && (npx --yes un-specweaver status --html >/dev/null 2>&1 || true)`;
+export function dashboardHookOk(root) {
+  try { return fs.readFileSync(path.join(root, gitDir(root), 'hooks', 'post-commit'), 'utf8').includes(DASHBOARD_HOOK_MARK); } catch { return false; }
+}
+function gitDir(root) {
+  try { return execFileSync('git', ['-C', root, 'rev-parse', '--git-dir'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return '.git'; }
+}
+
 export const GITIGNORE_START = '# >>> un-specweaver >>>';
 export const GITIGNORE_END   = '# <<< un-specweaver <<<';
 
@@ -114,6 +126,8 @@ export function gitignoreBlock(_agentsIgnored) {
                  `${VENDORS.graphify.outDir}/`,
                  // Vista derivada de `status --html`: se regenera, no se versiona.
                  '.un-specweaver/dashboard.html',
+                 // Estado de ESTA maquina (agentes, rutas, pasos): un diff por compañero si se commitea.
+                 '.un-specweaver/local.json',
                  ...VENDORS.gentle.generatedProjectDirs.map((d) => `${d}/`), ''];
   // Cada vendor escribe en sitios distintos. OpenSpec ademas crea <dir-del-agente>/skills/,
   // que no aparece en la config porque BMAD manda las skills de OpenCode a .agents/skills.
@@ -512,6 +526,25 @@ export const STEPS = [
       if (isGitRepo(ctx.root)) actions.push(exec(v.bin, ['hook', 'install'], t(ctx.lang, 'step.graphify.hookWhy')));
       else actions.push(note(t(ctx.lang, 'step.graphify.noGitHook')));
       return actions;
+    },
+  },
+
+  {
+    id: 'dashboard-hook',
+    blocks: 'none',
+    titleKey: 'step.dashboard-hook.title',
+    status(ctx) {
+      if (!isGitRepo(ctx.root)) return { state: 'skip', detail: t(ctx.lang, 'step.gitignore.noGit') };
+      return dashboardHookOk(ctx.root)
+        ? { state: 'ok', detail: t(ctx.lang, 'step.dashboard-hook.ok') }
+        : { state: 'pending', detail: t(ctx.lang, 'step.dashboard-hook.pending') };
+    },
+    plan(ctx) {
+      // Se agrega al post-commit existente (graphify tambien vive ahi); nunca se reemplaza.
+      const f = path.join(ctx.root, gitDir(ctx.root), 'hooks', 'post-commit');
+      const cur = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '#!/bin/sh\n';
+      const content = cur.includes(DASHBOARD_HOOK_MARK) ? cur : `${cur.trimEnd()}\n${DASHBOARD_HOOK}\n`;
+      return [write(f, content, t(ctx.lang, 'step.dashboard-hook.why'), { mode: 0o755 })];
     },
   },
 

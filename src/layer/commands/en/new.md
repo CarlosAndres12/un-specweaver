@@ -83,4 +83,6 @@ Show the user:
 - the waves from `.un-specweaver/sprint-plan.md` and what can run in parallel
 - the known limit: cross-epic dependencies are only detected when written in the story text
 
-Stop there. Building starts with `/sw:build <change-id>`.
+Close with `npx un-specweaver status --open`: the dashboard with the freshly generated plan is the
+best way to show it to someone who does not know the method. Stop there. Building starts with
+`/sw:build <change-id>`.

@@ -85,4 +85,6 @@ Muestra al usuario:
 - las olas de `.un-specweaver/sprint-plan.md` y que se puede trabajar en paralelo
 - el limite conocido: las dependencias entre epics solo se detectan si estan escritas en el texto
 
-Termina ahi. La construccion empieza con `/sw:build <change-id>`.
+Cierra con `npx un-specweaver status --open`: el dashboard con el plan recien generado es la mejor
+forma de mostrarselo a quien no conoce el metodo. Termina ahi. La construccion empieza con
+`/sw:build <change-id>`.

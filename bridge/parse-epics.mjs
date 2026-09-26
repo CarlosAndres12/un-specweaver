@@ -9,8 +9,13 @@ const RE_AC_FIELD = /^\*\*(Given|When|Then|And)\*\*\s*:?\s*(.*)$/i;
 // BMAD 6.11 emite "FR-23" con guion; versiones y plantillas distintas usan "FR001" sin el.
 // Verificado contra un PRD real: exigir FR\d+ dejaba trace.json sin un solo requisito
 // mapeado, y el control de alcance de /sw:change sin ancla, en silencio.
-const RE_REQ_ID   = /\b(UX-DR|NFR|FR)[-_ ]?(\d+)\b/g;
+// AD-n (decision de arquitectura) tambien se cita en "Cubre:": una story de andamiaje puede
+// no tocar ningun FR y aun asi cubrir una decision. Sin esto quedaba "vacia".
+const RE_REQ_ID   = /\b(UX-DR|NFR|FR|AD)[-_ ]?(\d+)\b/g;
 const RE_REQ_LINE = /\b(UX-DR|NFR|FR)([-_ ]?)(\d+)\b\s*[:\-–]?\s*(.*)$/;
+// Un requisito eliminado sigue en el inventario, tachado, para que el id no se reutilice:
+// `~~**FR-15:** texto~~ **ELIMINADO 2026-08-26.**`. Contarlo como vivo lo mostraba "sin story".
+const RE_REMOVED  = /\b(ELIMINADO|ELIMINADA|REMOVED|DEPRECATED|RETIRADO)\b/i;
 
 // Se conserva la forma tal como la escribe el documento (para que grepear funcione),
 // pero se deduplica por clave normalizada: FR-23 y FR23 son el mismo requisito.
@@ -47,10 +52,25 @@ function sections(lines) {
 function parseRequirementList(lines) {
   const reqs = [];
   for (const raw of lines) {
-    const line = stripBullet(raw).replace(/\*\*/g, '');
+    let line = stripBullet(raw).replace(/\*\*/g, '');
     if (!line) continue;
+    const struck = /~~/.test(line);
+    line = line.replace(/~~/g, '');
     const m = line.match(RE_REQ_LINE);
-    if (m) { const id = `${m[1]}${m[2]}${m[3]}`; reqs.push({ id, text: (m[4] || '').trim(), key: reqKey(id) }); }
+    if (!m) continue;
+    const id = `${m[1]}${m[2]}${m[3]}`;
+    let text = (m[4] || '').trim();
+    const rm = text.match(RE_REMOVED);
+    const removed = struck || !!rm;
+    const req = { id, text, key: reqKey(id) };
+    if (removed) {
+      req.removed = true;
+      const date = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+      if (date) req.removedAt = date[1];
+      // El texto util es el del requisito, no la nota de eliminacion.
+      if (rm) req.text = text.slice(0, rm.index).trim().replace(/[.\s]+$/, '');
+    }
+    reqs.push(req);
   }
   return reqs;
 }
@@ -240,7 +260,7 @@ export function parseEpics(markdown) {
   // La cobertura vale venga de donde venga: tabla o mencion dentro de la story.
   // Contar solo las tablas marcaba como huerfano un FR que la story si citaba.
   const covered = new Set(doc.epics.flatMap((e) => e.stories).flatMap((st) => st.requirements).map(reqKey));
-  const orphan = doc.requirements.functional.filter((r) => !covered.has(r.key));
+  const orphan = doc.requirements.functional.filter((r) => !r.removed && !covered.has(r.key));
   if (orphan.length) doc.warnings.push(`${orphan.length} requisito(s) sin cobertura declarada: ${orphan.map((r) => r.id).join(', ')}`);
 
   // Validaciones que deben romper el puente, no pasar silenciosas.

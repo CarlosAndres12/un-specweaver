@@ -30,6 +30,7 @@ export async function runAction(a, ctx) {
       if (a.keepExisting && fs.existsSync(a.file)) { console.log(`     ${t(ctx.lang, 'run.kept', path.relative(ctx.root, a.file))}`); return { ok: true }; }
       fs.mkdirSync(path.dirname(a.file), { recursive: true });
       fs.writeFileSync(a.file, a.content, 'utf8');
+      if (a.mode) fs.chmodSync(a.file, a.mode);
       console.log(`     ${t(ctx.lang, 'run.wrote', path.relative(ctx.root, a.file))}`);
       return { ok: true };
     }

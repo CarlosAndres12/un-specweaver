@@ -56,11 +56,11 @@ test('el plan de un proyecto vacio incluye todos los pasos en orden', () => {
   const plan = buildPlan(ctxFor(root));
   // gitignore va primero: si un paso posterior falla, el vendor a medio instalar
   // no puede terminar commiteado por accidente.
-  assert.deepEqual(plan.map((s) => s.id), ['gitignore', 'bmad', 'bmad-prune', 'openspec', 'gentle-bin', 'gentle-config', 'engram-scope', 'graphify-bin', 'graphify', 'surface', 'layer']);
+  assert.deepEqual(plan.map((s) => s.id), ['gitignore', 'bmad', 'bmad-prune', 'openspec', 'gentle-bin', 'gentle-config', 'engram-scope', 'graphify-bin', 'graphify', 'dashboard-hook', 'surface', 'layer']);
   // gitignore depende de si hay repo git; gentle-bin depende del PATH de la maquina,
   // no del proyecto. El resto si tiene que estar pendiente en un directorio vacio.
   // graphify-bin tambien depende del PATH.
-  const projectScoped = plan.filter((s) => !['gitignore', 'gentle-bin', 'engram-scope', 'graphify-bin'].includes(s.id));
+  const projectScoped = plan.filter((s) => !['gitignore', 'gentle-bin', 'engram-scope', 'graphify-bin', 'dashboard-hook'].includes(s.id));
   assert.ok(projectScoped.every((s) => s.status.state === 'pending'), 'nada del proyecto puede estar "ok" en un directorio vacio');
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -211,7 +211,7 @@ const CMDS = fs.readdirSync(path.join(LAYER, 'commands', 'es')).map((f) => f.rep
 
 test('existen los comandos, en los dos idiomas', () => {
   // bug y change son flujos separados a proposito: uno cambia lo acordado, el otro no.
-  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'dashboard', 'doctor', 'new', 'sprint', 'status', 'sync', 'ticket', 'update']);
+  assert.deepEqual(CMDS, ['adopt', 'bug', 'build', 'change', 'close', 'dashboard', 'doctor', 'new', 'sprint', 'status', 'sync', 'ticket', 'update']);
   const en = fs.readdirSync(path.join(LAYER, 'commands', 'en')).map((f) => f.replace(/\.md$/, '')).sort();
   assert.deepEqual(en, CMDS, 'es y en deben tener exactamente los mismos comandos');
 });
@@ -1128,10 +1128,40 @@ test('los agentes elegidos quedan guardados y no se re-detectan', async () => {
 
 test('reinstalar respeta los agentes guardados en vez de volver a detectar', () => {
   const root = tmp();
-  writeState(root, { version: 1, preferences: { ...DEFAULTS, agents: ['claude-code'] }, agents: ['claude-code'] });
+  writeState(root, { preferences: { ...DEFAULTS, agents: ['claude-code'] }, agents: ['claude-code'] });
   const stored = readState(root);
   assert.deepEqual(stored.preferences.agents, ['claude-code'],
-    'la eleccion de agentes es una preferencia, no un resultado de deteccion');
+    'la eleccion de agentes se recuerda por maquina');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('config.json es del proyecto y local.json de la maquina: lo que cambia por compañero no va al repo', () => {
+  // Señalado en revision de codigo: un PR traia el config.json con la ruta del binario de
+  // engram de OTRA maquina, sus agentes y el resultado de sus pasos. Un diff por compañero.
+  const root = tmp();
+  writeState(root, {
+    installedAt: '2026-09-14T00:00:00Z', preferences: { lang: 'en', agents: ['opencode'] }, pruneExtra: true,
+    agents: ['opencode'], vendors: { bmad: 'x' }, optional: { engram: { bin: '/home/carlos/.local/bin/engram' } },
+    steps: [{ id: 'bmad', ok: true }],
+  });
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.un-specweaver', 'config.json'), 'utf8'));
+  const local = JSON.parse(fs.readFileSync(path.join(root, '.un-specweaver', 'local.json'), 'utf8'));
+  assert.deepEqual(config, { version: 2, preferences: { lang: 'en' }, pruneExtra: true }, 'solo decisiones del proyecto');
+  assert.deepEqual(Object.keys(local).sort(), ['agents', 'installedAt', 'optional', 'steps', 'vendors']);
+  assert.doesNotMatch(JSON.stringify(config), /carlos|opencode|installedAt/, 'nada de la maquina en el repo');
+
+  // Leer devuelve lo de siempre, fusionado.
+  const st = readState(root);
+  assert.equal(st.preferences.lang, 'en'); assert.deepEqual(st.preferences.agents, ['opencode']); assert.equal(st.vendors.bmad, 'x');
+
+  // Un config.json de 0.x con todo junto se sigue leyendo; el proximo init lo separa.
+  fs.rmSync(path.join(root, '.un-specweaver', 'local.json'));
+  fs.writeFileSync(path.join(root, '.un-specweaver', 'config.json'), JSON.stringify({ version: 1, lang: 'es', preferences: { lang: 'es', agents: ['claude-code'] }, agents: ['claude-code'], vendors: { bmad: 'y' } }));
+  const old = readState(root);
+  assert.equal(old.preferences.lang, 'es'); assert.deepEqual(old.preferences.agents, ['claude-code']); assert.equal(old.vendors.bmad, 'y');
+
+  assert.ok(gitignoreBlock([]).includes('.un-specweaver/local.json'), 'local.json se ignora');
+  assert.ok(!gitignoreBlock([]).includes('.un-specweaver/config.json'), 'config.json va al repo');
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -1208,5 +1238,24 @@ test('update con --dry-run no escribe archivos en disco', async () => {
   assert.equal(code, 0);
 
   assert.ok(!fs.existsSync(path.join(root, '.agents/skills/sw-update/SKILL.md')));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('el hook del dashboard se agrega al post-commit sin pisar lo que ya habia, y es idempotente', async () => {
+  const root = tmp();
+  execFileSync('git', ['-C', root, 'init', '-q']);
+  const step = STEPS.find((s) => s.id === 'dashboard-hook');
+  const hook = path.join(root, '.git', 'hooks', 'post-commit');
+  fs.mkdirSync(path.dirname(hook), { recursive: true });
+  fs.writeFileSync(hook, '#!/bin/sh\ngraphify update . # de graphify\n');
+  assert.equal(step.status(ctxFor(root)).state, 'pending');
+  const [w] = step.plan(ctxFor(root));
+  await runAction(w, { root, lang: 'es' });
+  const c = fs.readFileSync(hook, 'utf8');
+  assert.match(c, /graphify update \./, 'lo de graphify sigue');
+  assert.match(c, /un-specweaver status --html/);
+  assert.ok(fs.statSync(hook).mode & 0o111, 'ejecutable');
+  assert.equal(step.status(ctxFor(root)).state, 'ok');
+  assert.equal(step.plan(ctxFor(root))[0].content.split('un-specweaver: dashboard').length - 1, 1, 'no se duplica');
   fs.rmSync(root, { recursive: true, force: true });
 });

@@ -18,6 +18,8 @@ USO
   npx un-specweaver bridge <epics.md> convierte stories de BMAD en changes de OpenSpec
   npx un-specweaver context        lista los artefactos de planeacion a cargar
   npx un-specweaver history [FR-21] historial de decisiones por requisito, o ranking de los que mas cambian
+  npx un-specweaver close [ids]    cierra stories terminadas: valida y archiva su spec (--done: todas las
+                                   que tienen sus tareas completas · --dry-run: solo lista)
   npx un-specweaver status [dir]   en que va el proyecto: fases, changes, sprint, requisitos, decisiones
                                    --html escribe .un-specweaver/dashboard.html · --open lo abre · --json
   npx un-specweaver vendors           muestra las versiones pineadas
@@ -170,6 +172,7 @@ function flags(argv) {
     else if (a === '--only') o.only = argv[++i].split(',').map((s) => s.trim());
     else if (a === '--skip') o.skip = argv[++i].split(',').map((s) => s.trim());
     else if (a === '--vendors') o.vendors = true;
+    else if (a === '--done') o.done = true;
     else if (a === '--html') o.html = true;
     else if (a === '--open') { o.html = true; o.open = true; }
     else if (a === '--json') o.json = true;
@@ -413,6 +416,32 @@ if (cmd === 'dashboard' || cmd === 'ui') {
       for (const e of h.events) console.log(`  ${(e.when || '????-??-??').padEnd(10)} ${e.source.padEnd(22)} (${e.type}) ${e.text}\n             ${e.file}`);
       console.log('');
       process.exit(0);
+    }
+
+    case 'close': {
+      // Validar y archivar: lo que vuelve el delta linea base. Un comando, no un recordatorio.
+      const { closable, closeChanges } = await import('../src/close.mjs');
+      const root = path.resolve(process.cwd());
+      const done = closable(root);
+      let ids = o._;
+      if (!ids.length && o.done) ids = done.map((c) => c.id);
+      if (!ids.length) {
+        if (!done.length) { console.log('\nNo hay changes con todas las tareas completas. Nada que cerrar.\n'); process.exit(0); }
+        console.log(`\n${done.length} change(s) con todas las tareas completas, sin archivar:\n`);
+        for (const c of done) console.log(`  ${(c.story || '').padEnd(5)} ${c.id}`);
+        console.log('\n  npx un-specweaver close --done        cierra todos\n  npx un-specweaver close <id> [<id>]  cierra esos\n');
+        process.exit(0);
+      }
+      const results = closeChanges(root, ids, { dryRun: !!o.dryRun });
+      for (const r of results) {
+        if (r.dryRun) console.log(`  [dry] ${r.id}  validate --strict → archive`);
+        else if (r.ok) console.log(`  ok     ${r.id}  archivado`);
+        else console.error(`  falla  ${r.id}  en ${r.step}:\n${r.out.split('\n').map((l) => '         ' + l).join('\n')}`);
+      }
+      const failed = results.filter((r) => !r.ok);
+      if (!o.dryRun && results.length - failed.length) { const { refreshDashboard } = await import('../src/status/collect.mjs'); if (await refreshDashboard(root)) console.log('  dashboard actualizado'); }
+      console.log(`\n${results.length - failed.length} cerrado(s), ${failed.length} con fallas.${failed.length ? ' Un change que no valida no se archiva: corrige el epics.md y regenera con `bridge --only N.M --force`.' : ''}\n`);
+      process.exit(failed.length ? 1 : 0);
     }
 
     case 'status': {

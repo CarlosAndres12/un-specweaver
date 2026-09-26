@@ -47,7 +47,7 @@ Duplicar entre capas es como empiezan a contradecirse.
 
 ## El flujo, en comandos
 
-Diez comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en OpenCode, `/sw-new`.
+Once comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en OpenCode, `/sw-new`.
 
 ```
                   ┌─ /sw:new ─────────────────────────────────┐
@@ -62,7 +62,9 @@ Diez comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en Ope
    /sw:build <id> ──▶ construir una historia contra su contrato
                                       │
                                       ▼
-                              /sw:build la archiva
+                    /sw:close la valida y archiva (linea base)
+
+   /sw:status ──▶ ¿como vamos? el dashboard, en cualquier momento
 ```
 
 | Comando | Cuando |
@@ -75,7 +77,8 @@ Diez comandos, un solo vocabulario. En Claude Code se escriben `/sw:new`; en Ope
 | `/sw:ticket <n>` | issue de GitHub: clasifica y enruta a uno de los dos anteriores |
 | `/sw:sprint` | recalcula que se puede paralelizar segun dependencias reales |
 | `/sw:sync` | actualizar las herramientas de forma controlada |
-| `/sw:status` | en que va el proyecto: fases, changes con avance, olas, requisitos inestables, historial |
+| `/sw:status` | ¿como vamos? — abre el **dashboard** (`status --open`) y lo interpreta: que se puede empezar, que esta inestable, que falta cerrar |
+| `/sw:close [id]` | cerrar stories terminadas: validar y archivar su spec. **Terminar no es cerrar** |
 | `/sw:doctor` | salud del entorno y coherencia del flujo |
 
 ---
@@ -237,7 +240,8 @@ detecta tu gestor de paquetes. Va a pedir confirmacion antes de ejecutar el scri
 
 ### Las dos preguntas de `init`
 
-Se hacen **una sola vez** y quedan en `.un-specweaver/config.json`:
+Se hacen **una sola vez**. El idioma queda en `.un-specweaver/config.json` (del proyecto, va al repo);
+los agentes en `.un-specweaver/local.json` (de tu maquina, ignorado — cada compañero elige los suyos):
 
 | Pregunta | Opciones | Recomendado |
 |---|---|---|
@@ -334,6 +338,7 @@ npx un-specweaver --help              # ayuda completa, sale 1 sin comando
 npx un-specweaver --version           # version, sale 0
 npx un-specweaver <comando> --help    # ayuda completa, sale 0 (salvo bridge y dashboard)
 npx un-specweaver history [FR-21]     # historia de un requisito, o ranking de los que mas cambian
+npx un-specweaver close [ids|--done]  # cierra stories terminadas: valida y archiva su spec
 npx un-specweaver status [dir]        # en que va: fases, changes, sprint, requisitos, decisiones
 npx un-specweaver status --open       # lo mismo como .un-specweaver/dashboard.html, en el navegador
 ```
@@ -354,14 +359,33 @@ linea de tiempo completa con archivo y motivo. Es una vista: no guarda nada. En 
 (150 entradas, 34 ids citados) el primero del ranking era un FR con un `(override)` que decia
 exactamente por que se descarto lo que el asistente habia sugerido — y `/sw:change` no lo veia.
 
-`status` junta todo en una pantalla: las seis fases con el artefacto que las prueba, los changes
-con su avance (casillas de `tasks.md`) y su estado (pendiente, en curso, tareas completas,
-archivado), las olas del sprint con que se puede empezar ya y que esta bloqueado por quien, los
-requisitos con cobertura e inestabilidad, las decisiones por tipo, y un historial que mezcla
-memlogs, corridas del puente y archives. `--html` escribe un archivo **autocontenido** —CSS y JS
-inline, sin CDN ni servidor— que se abre offline, en CI, o lo abre un compañero sin instalar nada.
-Es una vista: **no guarda nada** y se regenera cada vez, asi que va al `.gitignore`. Si algo se ve
-mal ahi, esta mal en la fuente.
+`status` en terminal es el resumen; `status --open` es **el dashboard**, pensado para responder
+"¿como vamos?" a alguien que no conoce el metodo:
+
+| Seccion | Que muestra |
+|---|---|
+| Nomenclatura | que es un FR, NFR, UX-DR, AD, epic, story, AC, spec, change, ola, revision, descarte. Abierta por defecto |
+| ¿Como vamos? | anillos en cadena: FR / NFR / UX-DR completados → stories terminadas → specs cerradas → tareas hechas. Click en cualquiera abre un canvas a pantalla completa con **Completados / Pendientes** y cada item plegable (una story con su narrativa, requisitos, spec y criterios; una tarea con su seccion y su casilla). Debajo, la alerta de **requisitos inestables** (2+ cambios), que explica que significa y abre cada uno con su historial |
+| Cuando se trabajo | un calendario por mes con cada dia coloreado por actividad registrada —commits de git, decisiones, cambios, corridas del puente, specs cerradas— y click en el dia para ver que paso |
+| Esfuerzo por etapa | Brief, PRD, arquitectura, UX y cambios de alcance: cuantas decisiones, cambios, descartes y supuestos dejo cada una. Click en una barra abre las entradas; click en un documento (`prd.md`, `DESIGN.md`, el memlog…) lo abre renderizado. Debajo, la descomposicion: FR/NFR/UX-DR → epics → stories → specs → tareas |
+| Flujo | cuatro columnas conectadas —requisitos, epics, stories, specs— con filtro por epic para proyectos largos (NFR y UX-DR ocultos por defecto). Click resalta el camino y abre el detalle; los requisitos inestables llevan su conteo en el bloque |
+| Memoria del proyecto | pestañas: por etapa, historial paso a paso, decisiones clave (descartes primero), cambios y a que afectaron |
+
+Todo sale de archivos que ya existen: el PRD y los memlogs de BMAD, `epics.md` (con los requisitos
+eliminados tachados, que no cuentan), `trace.json`, `openspec/changes/` y `archive/`,
+`changelog.jsonl`, el grafo de graphify, el `git log`. `--html` escribe un archivo
+**autocontenido** —CSS y JS inline, sin CDN ni servidor— que se abre offline, en CI, o lo abre
+un compañero sin instalar nada. Es una vista: **no guarda nada** y se regenera cada vez, asi
+que va al `.gitignore`. Si algo se ve mal ahi, esta mal en la fuente. Se mantiene solo: `bridge`
+y `close` lo regeneran al terminar, e `init` deja un hook de post-commit que lo rehace con cada
+commit — una vista que solo se actualiza cuando alguien se acuerda es una vista vieja.
+
+`close` existe porque el cierre dependia de la memoria del agente. `/sw:build` decia "archiva
+cuando este entregado" y en un proyecto real quedaron 22 stories terminadas y **cero archivadas**:
+sin `openspec/specs/` no hay linea base y `/sw:change` no tenia contra que medir el alcance. Ahora
+es un comando: por cada change con todas las tareas marcadas corre `openspec validate --strict` y
+`openspec archive`; el que no valida no se archiva. `doctor` y el dashboard avisan mientras haya
+terminadas sin cerrar, y `/sw:build` lo invoca en su paso de cierre.
 
 | Comando | Que hace |
 |---|---|
@@ -520,7 +544,7 @@ defecto). `--help` / `-h` y `--version` / `-v` tambien valen aqui.
    lo retira
 8. graphify pineado (via `uv` o `pipx`), la skill dentro del proyecto para cada agente,
    `.graphifyignore` (solo codigo), los hooks acotados, el grafo AST y el hook de post-commit
-9. Los diez comandos `/sw:*` en el formato de cada agente, la skill `un-specweaver` en todos los
+9. Los once comandos `/sw:*` en el formato de cada agente, la skill `un-specweaver` en todos los
    dirs de skills, y `docs/architecture-base.md`
 
 ### Prerequisitos que la herramienta NO resuelve sola
@@ -554,7 +578,7 @@ seria mentir.
 |---|---|
 | `bmad`, `bmad-prune`, `openspec`, `layer` | planear (`/sw:new`, `/sw:adopt`) |
 | `gentle-bin`, `gentle-config`, `engram-scope`, `graphify-bin`, `graphify` | **solo** `/sw:build` — planear funciona sin ellos |
-| `gitignore` | nada; es higiene del repo |
+| `gitignore`, `dashboard-hook` | nada; higiene del repo y frescura del dashboard |
 
 Sin esa distincion un agente se detiene por Gentle-AI antes siquiera de levantar requerimientos,
 que es exactamente lo que pasaba antes.
@@ -569,7 +593,8 @@ reemplaza en vez de duplicarlo). En un proyecto real la diferencia es de **499 a
 | `openspec/` — los specs son el producto | `_bmad/`, `node_modules/` |
 | `_bmad-output/` — PRD y epics | `.claude/skills/bmad-*/`, `.agents/skills/bmad-*/` |
 | `docs/architecture-base.md` | `.claude/commands/sw/`, `.opencode/commands/sw-*.md` |
-| `.un-specweaver/` — config, trazabilidad, ledger | skills y comandos de OpenSpec; `.un-specweaver/dashboard.html` |
+| `.un-specweaver/config.json` (idioma), `trace.json`, `sprint-plan.md`, `changelog.jsonl` | `.un-specweaver/local.json` — agentes, rutas y pasos de **esta** maquina |
+| | `.un-specweaver/dashboard.html` — regenerable |
 | `.engram/config.json` — nombre del proyecto en Engram | `graphify-out/` — AST regenerable; el hook lo reescribe en cada commit |
 | `.graphifyignore` — el alcance del grafo es regla del equipo | `.claude/skills/graphify/`, `.opencode/skills/graphify/` |
 
@@ -710,7 +735,7 @@ Una sola duena por dato:
 ## Desarrollo
 
 ```bash
-npm test                    # 143 tests
+npm test                    # 150 tests
 npm pack                    # ~23 kB
 node bin/un-specweaver.mjs init --dry-run
 ```
@@ -724,10 +749,11 @@ implementando `status()` y `plan()`; `--dry-run`, la idempotencia y `doctor` sal
 |---|---|
 | `bridge/` — story → change | **funciona**, es/en, validado contra `openspec validate --all --strict`; `MODIFIED` + revisiones + ledger verificados contra `openspec archive` |
 | `init` / `doctor` — instalador multi-agente | **funciona**, probado end-to-end desde el tarball |
-| 10 comandos `/sw:*` | **funciona**, es/en, Claude Code + OpenCode |
+| 11 comandos `/sw:*` | **funciona**, es/en, Claude Code + OpenCode |
 | Skill `un-specweaver` | **funciona**, es/en, todos los agentes |
 | `history` — decisiones por requisito | **funciona** — memlogs + propuestas de cambio + ledger; probado sobre un proyecto real |
-| `status` / dashboard | **funciona** — terminal y HTML autocontenido, es/en |
+| `status` / dashboard | **funciona** — terminal y dashboard HTML autocontenido de gerencia, es/en, probado sobre un proyecto real; se regenera con bridge, close y cada commit |
+| `close` — cerrar stories | **funciona** — valida y archiva; 22 stories cerradas en un proyecto real |
 | Mensajes del CLI bilingües | **funciona**, 86 cadenas, es/en |
 | graphify (mapa del codigo, solo codigo) | **funciona** — instalado, acotado, grafo AST y hook; verificado contra graphify 0.8.37 |
 | Gentle-AI (binario) | **funciona** — instala via Homebrew |

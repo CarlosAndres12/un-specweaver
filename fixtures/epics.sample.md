@@ -17,6 +17,7 @@ Este documento provee el desglose completo de epics y stories para Portal de Pro
 - **FR002**: El proveedor puede iniciar sesión con MFA.
 - **FR003**: El comprador puede publicar una orden de compra.
 - **FR004**: El proveedor recibe notificación de nuevas órdenes.
+- ~~**FR005**: El proveedor exporta sus órdenes a Excel.~~ **ELIMINADO 2026-09-03.** El identificador no se reutiliza.
 
 ### NonFunctional Requirements
 

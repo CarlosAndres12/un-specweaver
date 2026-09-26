@@ -28,7 +28,8 @@ Los comandos, para tenerlos a mano:
   /sw:bug "<defecto>"  defecto (lo acordado esta bien, el codigo no)
   /sw:ticket <n>       issue de GitHub: clasifica y enruta
   /sw:doctor           salud del entorno y del flujo
-  /sw:status           en que va el proyecto (o: npx un-specweaver status --open)`,
+  /sw:status           en que va el proyecto (o: npx un-specweaver status --open)
+  /sw:close            cerrar stories terminadas: validar y archivar su spec`,
     'prefs.header': `\n  Configuracion del proyecto — Enter toma el valor por defecto [1].\n  Queda en .un-specweaver/config.json y no se vuelve a preguntar.\n`,
     'prefs.ask': '  > ',
     'prefs.agentsHeader': '\n  Agentes a configurar (detectados en tu maquina)\n',
@@ -144,6 +145,7 @@ ${cmds}
     'doctor.unknownVersion': 'version desconocida',
     'doctor.pending': (n) => `\n${n} paso(s) pendiente(s). Corre "un-specweaver init" — los ya hechos se omiten solos.`,
     'doctor.allGood': '\nTodo al dia.',
+    'doctor.unarchived': (n) => `\n${n} story/ies con todas las tareas completas SIN archivar: no hay linea base y /sw:change no puede medir alcance. Cierra con "npx un-specweaver close --done".`,
 
     'engram.name': 'engram',
     'engram.present': (b) => `presente (${b})`,
@@ -173,6 +175,10 @@ ${cmds}
     'step.graphify.updateWhy': 'grafo AST inicial: determinista, sin LLM; sin codigo termina bien y no crea nada',
     'step.graphify.hookWhy': 'post-commit y post-checkout reconstruyen solo lo que cambio — el grafo nunca queda viejo',
     'step.graphify.noGitHook': 'sin repo git no se instala el hook: reconstruye con `graphify update .` cuando cambie el codigo',
+    'step.dashboard-hook.title': 'Regenerar el dashboard en cada commit',
+    'step.dashboard-hook.ok': 'hook de post-commit instalado',
+    'step.dashboard-hook.pending': 'agregar al post-commit',
+    'step.dashboard-hook.why': 'si .un-specweaver/dashboard.html existe, cada commit lo regenera; una vista que solo se actualiza cuando alguien se acuerda es una vista vieja',
     'step.engram.title': 'Segmentar la memoria de Engram por proyecto',
     'step.engram.ok': (p) => `atada a "${p}"`,
     'step.engram.pending': (p) => `escribir .engram/config.json con "${p}"`,
@@ -211,7 +217,8 @@ The commands, for reference:
   /sw:bug "<defect>"   defect (what was agreed is fine, the code is not)
   /sw:ticket <n>       GitHub issue: classify and route
   /sw:doctor           environment and flow health
-  /sw:status           where the project stands (or: npx un-specweaver status --open)`,
+  /sw:status           where the project stands (or: npx un-specweaver status --open)
+  /sw:close            close finished stories: validate and archive their spec`,
     'prefs.header': `\n  Project setup — Enter takes the default [1].\n  Stored in .un-specweaver/config.json and never asked again.\n`,
     'prefs.ask': '  > ',
     'prefs.agentsHeader': '\n  Agents to configure (detected on your machine)\n',
@@ -327,6 +334,7 @@ ${cmds}
     'doctor.unknownVersion': 'unknown version',
     'doctor.pending': (n) => `\n${n} step(s) pending. Run "un-specweaver init" — completed ones are skipped.`,
     'doctor.allGood': '\nAll up to date.',
+    'doctor.unarchived': (n) => `\n${n} story/ies with every task complete but NOT archived: there is no baseline and /sw:change cannot measure scope. Close them with "npx un-specweaver close --done".`,
 
 
     'engram.name': 'engram',
@@ -357,6 +365,10 @@ ${cmds}
     'step.graphify.updateWhy': 'initial AST graph: deterministic, no LLM; with no code it exits fine and writes nothing',
     'step.graphify.hookWhy': 'post-commit and post-checkout rebuild only what changed — the graph never goes stale',
     'step.graphify.noGitHook': 'no git repo, so no hook: rebuild with `graphify update .` when code changes',
+    'step.dashboard-hook.title': 'Regenerate the dashboard on every commit',
+    'step.dashboard-hook.ok': 'post-commit hook installed',
+    'step.dashboard-hook.pending': 'append to post-commit',
+    'step.dashboard-hook.why': 'if .un-specweaver/dashboard.html exists, every commit regenerates it; a view that only updates when someone remembers is a stale view',
     'step.engram.title': 'Scope Engram memory to this project',
     'step.engram.ok': (p) => `bound to "${p}"`,
     'step.engram.pending': (p) => `write .engram/config.json with "${p}"`,

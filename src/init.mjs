@@ -3,6 +3,7 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { VENDORS, preflight, detectAgents, detectEngram, isGitRepo, writeState, readState, which } from './env.mjs';
 import { buildPlan } from './steps.mjs';
+import { unarchivedDone } from './close.mjs';
 import { runPlan } from './run.mjs';
 import { t, LANGS } from './i18n.mjs';
 import { resolvePrefs, promptPrefs, promptAgents, validateFlag, DEFAULTS } from './prefs.mjs';
@@ -91,10 +92,9 @@ export async function init(opts) {
 
   if (!opts.dryRun) {
     writeState(root, {
-      version: 1,
       installedAt: new Date().toISOString(),
-      lang,
       preferences: prefs,
+      pruneExtra: !!opts.pruneExtra,
       agents: agents.map((a) => a.id),
       // Se registra lo que quedo instalado de verdad, no lo que se pretendia instalar:
       // un estado optimista hace que doctor reporte "ok" sobre algo que no existe.
@@ -198,6 +198,10 @@ export async function doctor(opts) {
   }
 
   reportOptional(root, lang);
+
+  // Terminado no es cerrado. Sin archive no hay linea base y /sw:change no mide alcance.
+  const pending = unarchivedDone(root);
+  if (pending) console.log(t(lang, 'doctor.unarchived', pending));
 
   console.log(
     blockingPlan ? t(lang, 'doctor.pendingPlan', blockingPlan)
