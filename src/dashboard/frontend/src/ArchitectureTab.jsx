@@ -113,6 +113,10 @@ export default function ArchitectureTab({ projectId }) {
         nodes={layout.nodes}
         edges={layout.edges}
         fitView
+        // Kept for general breathing room; empirically confirmed (see
+        // odd/tasks/plan-minimap-overlap.md) that this padding value has no
+        // measurable effect on the MiniMap/node overlap below — that's
+        // fixed by MiniMap's own smaller `style` size, not this.
         fitViewOptions={{ padding: 0.3 }}
         minZoom={0.2}
         maxZoom={2}
@@ -126,6 +130,7 @@ export default function ArchitectureTab({ projectId }) {
           nodeColor={(n) => hexColorForKind(archGraph.nodes.find((x) => x.id === n.id)?.kind || '', layout.kindOrder)}
           nodeStrokeWidth={2}
           position="bottom-left"
+          style={{ width: 100, height: 75 }}
         />
       </ReactFlow>
     </div>

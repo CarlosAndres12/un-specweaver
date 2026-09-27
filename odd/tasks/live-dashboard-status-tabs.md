@@ -189,6 +189,55 @@ edges/labels are all correct and unaffected); flagged to the user rather
 than silently accepted or silently fixed beyond the small `fitViewOptions`
 improvement.
 
+### Follow-up: MiniMap overlap fix, evaluated via Judgment Day (3 rounds)
+Full design/review history in `odd/tasks/plan-minimap-overlap.md`.
+
+- **Round 1** (judges A+B, blind/parallel): proposed a nearest-anchor-
+  distance corner-picking heuristic. **CRITICAL** — degenerated to ties
+  (distance 0) on single-column/single-row/single-node graphs, exactly its
+  own differentiating test cases; also a false claim that `@xyflow/react`
+  Panels "stack" (they fully overlap).
+- **Round 2**: rewrote as a quadrant node-count heuristic in a new pure,
+  unit-testable module. Judge A: no critical bug, but a wrong node-width
+  constant (150px real vs. 140px assumed). **Judge B: CRITICAL** — quadrant
+  classification used only each node's anchor point, ignoring that its
+  rendered footprint can straddle the quadrant split, so a node's body can
+  still occupy the "empty" quadrant the algorithm picks.
+- **User decision point**: two rounds of real bugs in a graph-space
+  heuristic trying to predict a screen-space (`fitView`) outcome — user
+  chose to abandon the clever-heuristic approach for an empirically-
+  validated one instead.
+- **Round 3** (final): empirically tested two levers against 7 fixture
+  graphs (single-node, single-column, single-row, dense-grid, the original
+  3-node repro, a 12-node stress case, a 3-column/long-label case — the
+  last added after round-3 review flagged the coverage gap) via the same
+  real headless-Chromium/CDP `getBoundingClientRect()` overlap measurement
+  used for the original feature verification: `fitViewOptions.padding`
+  (0.3→0.6) had **zero measured effect**; an explicit smaller `<MiniMap
+  style={{width:100,height:75}}>` (vs. the ~202×152 default) **fixed all 7
+  fixtures**, zero overlap. Both judges: **no critical issues** — findings
+  were all WARNING/SUGGESTION (fixture coverage gap, since closed; an
+  internal wording contradiction in the verification section, since fixed;
+  orphaned build artifacts from tuning iterations, cleaned up; the
+  now-confirmed-non-load-bearing `padding: 0.3` left without explanation,
+  now commented; a cross-tab MiniMap-size inconsistency with the sibling
+  `ArchitectureFlow.jsx`, disclosed as an accepted, intentional tradeoff
+  rather than fixed — that sibling is pre-existing/out of scope).
+- Final diff: one `style` prop on `ArchitectureTab.jsx`'s `<MiniMap>`, plus
+  a clarifying comment on the adjacent `fitViewOptions`. `npm run build:ui`
+  succeeds; `node --test test/dashboard.test.mjs test/frontend.test.mjs
+  test/cli-dashboard.test.mjs test/status.mjs`: 36/45 pass, 9 fail — the
+  same, already-documented pre-existing legacy-frontend failures, zero new
+  regressions.
+- **Disclosed, not solved**: no persisted automated regression test exists
+  for this (no jsdom/DOM test infra in this repo); a future change to
+  `MiniMap` styling, node sizing, or `fitView` options could silently
+  reintroduce the overlap with nothing to catch it. The CDP fixture script
+  used for verification is ephemeral (scratchpad only, not committed).
+  Corner choice remains fixed at whatever `fitView` computes on initial
+  load; user pan/zoom afterward isn't re-evaluated (unchanged from before,
+  not worsened).
+
 ## Checks
 - [x] T1 done, tested, committed (`5efb800`).
 - [x] T2 done, built, manually checked, committed (`41d6da5`).
