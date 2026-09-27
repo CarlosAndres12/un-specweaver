@@ -271,3 +271,35 @@ the reviewed boundary does NOT advance past `466f089` for this lineage (T2's
 user-owned decisions under ordinary repository policy, unaffected either
 way. Temporary review worktrees (`review-t1`/`review-t2`/`review-t3` under
 `../un-specweaver-worktrees/`) were removed after use.
+
+### Follow-up: real-world testing against unal_dasboard found 2 more bugs
+User tested the Architecture tab against a real external project
+(`/home/carlos/Documents/projects/unal_dasboard`, real graphify output, 692
+nodes). Found and fixed both (commit `447833f`; the stale-registration fix
+is data, not code, no commit):
+
+1. **Stale project registration** (data, not a code bug): the dashboard's
+   own project store had `unal_dasboard` registered at
+   `/home/carlos/laptop_ryzen/projects/unal_dasboard` (another machine,
+   `exists: false`). With no matching `graphify-out/graph.json` reachable,
+   `archGraph` was correctly `null` — the empty-state message was working
+   as designed, just pointed at the wrong directory. Fixed by
+   `pm.registerProject()` at the real path
+   (`/home/carlos/Documents/projects/unal_dasboard`, new id
+   `c82c994c-2537-431e-a169-cb1ef3ac9f0d`) and setting it active. The old
+   stale entry (`8c3f2816-...`) was left in place — no `removeProject()`
+   exists in `project-manager.mjs` to clean it up; harmless, just unused
+   clutter in the project list.
+2. **`readArchGraph()` only read `raw.edges`** — graphify's real output is
+   `networkx.node_link_data()` JSON, where edges live under `links`. Real
+   projects therefore always showed 0 edges (confirmed: unal_dasboard
+   reported 1286 edges via graphify's own CLI output, but
+   `readArchGraph()` returned `edges: []`). Fixed with a fallback to
+   `raw.links` when `raw.edges` is absent (RED/GREEN, new test in
+   `test/status.mjs`); verified against the real file:
+   `{ nodes: 692, edges: 1286 }`, matching graphify exactly. Also verified
+   end-to-end through the real (non-isolated-HOME) dashboard server hitting
+   `/api/projects/:id/status` for the corrected project id.
+3. `node --test test/dashboard.test.mjs test/frontend.test.mjs
+   test/cli-dashboard.test.mjs test/status.mjs`: 37/46 pass, same 9
+   pre-existing failures, zero new regressions (46 = 45 + 1 new test).
