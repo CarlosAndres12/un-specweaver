@@ -132,7 +132,7 @@ Route: delegated direct (writer trigger — new `ArchitectureTab.jsx` +
       edges), matching exactly what `ArchitectureTab.jsx` expects. **No
       interactive browser click-through was performed** — same disclosure
       as T2, only HTTP-level/data verification, not visual/interactive.
-- [x] Commit (`0746dcb`).
+- [x] Commit (`cd90c57`).
 
 ## Acceptance criteria
 - Opening the live dashboard for a project shows Progress and Architecture
@@ -156,4 +156,4 @@ Route: delegated direct (writer trigger — new `ArchitectureTab.jsx` +
 ## Checks
 - [x] T1 done, tested, committed (`5efb800`).
 - [x] T2 done, built, manually checked, committed (`41d6da5`).
-- [x] T3 done, built, manually checked, committed (`0746dcb`).
+- [x] T3 done, built, manually checked, committed (`cd90c57`).
