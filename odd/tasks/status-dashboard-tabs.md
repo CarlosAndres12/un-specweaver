@@ -152,6 +152,23 @@ expected since this is pure client-side JS behavior the current test suite
 doesn't exercise interactively (no jsdom in this repo, confirmed by the
 writer).
 
+### Native review assessment (RDD) — recorded, no review due yet
+RDD is `on` (global). Ran `gentle-ai review assess` on work-unit commit
+`0e87d52` against branch point `466f089` (`--committed-only`). First attempt
+failed closed to `high`/unassessable because of the untracked `.codegraph/`
+index directory (a CodeGraph artifact, not part of this change); resolved
+by re-running with `--untracked-scope=exclude` and the returned inventory
+digest, per the tool's own guidance — did not guess at the opaque
+`--intended-untracked-selection` JSON schema.
+
+Result: `risk: medium` (`executable_change` on `src/status/render.mjs`),
+342 changed lines, **`review_due: false`, reason: `under_budget`**. Per ODD,
+this stays pending in the slice until a later commit reaches the ~400-line
+delivery budget or a higher-risk change forces it; the reviewed boundary
+has not advanced past `466f089`. No native review transaction started.
+Push, PR, and merge to `main` remain separate, user-owned decisions under
+ordinary repository policy — unaffected by this assessment either way.
+
 ## Acceptance criteria
 - `npx un-specweaver status --html` output has a top-level tab bar with at
   least Progress and Architecture tabs, alongside the existing sections.
