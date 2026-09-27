@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { collectStatus, taskProgress, readChanges, sprintStatus } from '../src/status/collect.mjs';
-import { renderTerminal, renderHtml } from '../src/status/render.mjs';
+import { renderTerminal, renderHtml, readArchGraph } from '../src/status/render.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const CLI = path.join(ROOT, 'bin', 'un-specweaver.mjs');
@@ -239,6 +239,33 @@ test('Arquitectura: con graph.json real, los nodos y aristas normalizados viajan
   assert.match(html, /class="archsvg"/);
   assert.match(html, /kindColor/);
   assert.doesNotMatch(html, /<script src=|https?:\/\/cdn|<link /, 'sigue autocontenido con el grafo embebido');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Arquitectura: acepta el formato node-link de NetworkX (edges bajo "links", no "edges")', () => {
+  // graphify real produce networkx.node_link_data(): {directed, multigraph, graph, nodes, links}.
+  // Confirmado contra un proyecto real (unal_dasboard): sin este fallback, readArchGraph()
+  // veia 0 aristas pese a que graphify reportaba miles, porque solo miraba raw.edges.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'status-arch-nx-'));
+  fs.mkdirSync(path.join(dir, 'graphify-out'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'graphify-out', 'graph.json'),
+    JSON.stringify({
+      directed: true,
+      multigraph: false,
+      graph: {},
+      nodes: [
+        { id: 'src/app.mjs', label: 'app.mjs', kind: 'module' },
+        { id: 'src/util.mjs', label: 'util.mjs', kind: 'module' },
+      ],
+      links: [{ source: 'src/app.mjs', target: 'src/util.mjs', kind: 'imports' }],
+    }),
+  );
+  const s = collectStatus(dir);
+  const g = readArchGraph(s);
+  assert.ok(g, 'con nodes+links reales, no deberia devolver null');
+  assert.equal(g.nodes.length, 2);
+  assert.deepEqual(g.edges, [{ from: 'src/app.mjs', to: 'src/util.mjs', kind: 'imports' }]);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

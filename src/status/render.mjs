@@ -213,7 +213,10 @@ export function readArchGraph(s) {
       kind: String(n.kind ?? n.type ?? n.category ?? ''),
     }));
     const ids = new Set(nodes.map((n) => n.id));
-    const rawEdges = Array.isArray(raw?.edges) ? raw.edges : [];
+    // graphify real produce networkx.node_link_data(): las aristas viajan bajo "links", no
+    // "edges" (confirmado contra un proyecto real). Se acepta "edges" primero por compatibilidad
+    // con quien ya genere ese campo (y con los fixtures existentes de este archivo).
+    const rawEdges = Array.isArray(raw?.edges) ? raw.edges : Array.isArray(raw?.links) ? raw.links : [];
     const edges = rawEdges
       .map((e) => ({ from: String(e.source ?? e.from ?? e.src ?? ''), to: String(e.target ?? e.to ?? e.dst ?? ''), kind: String(e.kind ?? e.type ?? '') }))
       .filter((e) => ids.has(e.from) && ids.has(e.to));
