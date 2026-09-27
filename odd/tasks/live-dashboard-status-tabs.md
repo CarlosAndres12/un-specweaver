@@ -153,6 +153,42 @@ Route: delegated direct (writer trigger — new `ArchitectureTab.jsx` +
   case originally flagged — confirmed via `git stash` to exist identically
   on the clean pre-T1 checkout, so still zero new regressions.
 
+### Post-completion: real interactive browser verification (headless Chromium via CDP)
+T2/T3 explicitly disclosed no browser click-through was done. Ran one now:
+started the real dashboard server, drove headless `chromium` (`/usr/bin/chromium`,
+no Playwright/Puppeteer in this repo) over the DevTools Protocol (raw
+WebSocket, no new dependency) to click each tab and screenshot the result.
+
+- Dependencias (unchanged): renders exactly as before, no regression.
+- Progreso: renders real data — metric tiles (0/0 FR, 14/28 requirements,
+  98/274 tasks 36%, 28 active changes), phases stepper with correct
+  done/current state, sprint/requirements tiles, decisions section. Matches
+  `collectStatus()`'s actual output for this repo.
+- Arquitectura (this repo, no `graphify-out/graph.json`): correctly shows
+  the empty state, "Sin grafo de arquitectura disponible (requiere
+  graphify-out/graph.json)."
+- Arquitectura (populated path): registered a temp project (isolated `HOME`,
+  no pollution of the real project list) with a fixture `graphify-out/
+  graph.json` (3 nodes, 2 edges, 2 kinds). React Flow rendered 3 nodes / 2
+  edges with correct labels and kind-based coloring.
+
+**Bug found and fixed**: the `MiniMap` (bottom-left, fixed overlay) visually
+covered a node in the small fixture graph. Root cause: `layoutGraph`'s
+deterministic grid always places column-0's last row near the bottom-left of
+graph-space, which is exactly where `fitView` + a bottom-left `MiniMap`
+collide for small/sparse graphs. Added `fitViewOptions={{ padding: 0.3 }}`
+(harmless, more breathing room generally) — reduced but did not eliminate
+the overlap for this pathological tiny-graph case. **Confirmed this exact
+same MiniMap/node overlap already exists, pre-existing, in the untouched
+Dependencies tab** (`ArchitectureFlow.jsx`, same `position="bottom-left"`
+MiniMap convention, visible in the `01-dependencies.png` capture) — not a
+regression introduced by this feature, and a real fix (e.g. collision-aware
+layout or repositioning shared chrome) is out of scope for "add tabs to the
+dashboard." Left as a known, pre-existing, cosmetic-only limitation (data/
+edges/labels are all correct and unaffected); flagged to the user rather
+than silently accepted or silently fixed beyond the small `fitViewOptions`
+improvement.
+
 ## Checks
 - [x] T1 done, tested, committed (`5efb800`).
 - [x] T2 done, built, manually checked, committed (`41d6da5`).

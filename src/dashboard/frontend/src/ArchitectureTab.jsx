@@ -113,6 +113,7 @@ export default function ArchitectureTab({ projectId }) {
         nodes={layout.nodes}
         edges={layout.edges}
         fitView
+        fitViewOptions={{ padding: 0.3 }}
         minZoom={0.2}
         maxZoom={2}
         nodesDraggable={false}
