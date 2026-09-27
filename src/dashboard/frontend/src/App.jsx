@@ -13,10 +13,12 @@ import ArchitectureFlow from './components/canvas/ArchitectureFlow.jsx';
 import NodeInspector from './components/inspector/NodeInspector.jsx';
 import TerminalDrawer from './components/terminal/TerminalDrawer.jsx';
 import ProgressTab from './ProgressTab.jsx';
+import ArchitectureTab from './ArchitectureTab.jsx';
 
 const VIEW_TABS = [
   { id: 'dependencies', label: 'Dependencias' },
   { id: 'progress', label: 'Progreso' },
+  { id: 'architecture', label: 'Arquitectura' },
 ];
 
 export default function App() {
@@ -241,9 +243,11 @@ export default function App() {
         ))}
       </div>
 
-      {/* Main Viewport: Dependencies canvas or Progress view */}
+      {/* Main Viewport: Dependencies canvas, Progress view, or Architecture graph */}
       {activeTab === 'progress' ? (
         <ProgressTab projectId={activeProjectId} />
+      ) : activeTab === 'architecture' ? (
+        <ArchitectureTab projectId={activeProjectId} />
       ) : (
         <ArchitectureFlow
           projectId={activeProjectId}

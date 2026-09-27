@@ -102,33 +102,58 @@ Route: delegated direct (writer trigger — `App.jsx` + new `ProgressTab.jsx`,
       browser click-through was performed** — only HTTP-level verification
       that the right bytes/data are served; the tab-click UI itself was not
       visually exercised in a browser.
-- [x] Commit (see hash below).
+- [x] Commit (`41d6da5`).
 
-### T3 — Frontend: Architecture tab
+### T3 — Frontend: Architecture tab — DONE
 Route: delegated direct (writer trigger — new `ArchitectureTab.jsx` +
 `App.jsx` wiring).
-- [ ] `ArchitectureTab.jsx`: render `archGraph` (nodes/edges). Reuse
-      `@xyflow/react` (already a dependency, already used for the
-      Dependencies tab) instead of hand-rolled SVG, for a consistent
-      pan/zoom UX — deviation from `render.mjs`'s static circular-SVG
-      approach, justified by React Flow already being in place here.
-- [ ] Wire into the tab switcher from T2.
-- [ ] `npm run build:ui` succeeds.
-- [ ] Manual check as in T2.
-- [ ] Commit.
+- [x] `ArchitectureTab.jsx`: renders `archGraph` (nodes/edges) via
+      `@xyflow/react` (no new deps — no dagre/elk in `package.json`, so
+      layout is a simple deterministic grid, one column per `node.kind`,
+      stacked rows within it, mirroring `ArchitectureFlow`'s own
+      wave-column layout instead of adding a layout library). Node kind is
+      color-coded using the app's existing accent tokens
+      (`--accent-cyan/purple/green/amber/rose`) for on-screen node borders;
+      the `MiniMap` uses literal hex fallbacks for the same colors since
+      canvas `fillStyle` cannot resolve CSS custom properties — the same
+      tradeoff `ArchitectureFlow`'s own `MiniMap` already makes with
+      hardcoded hex. Read-only view (`nodesDraggable`/`nodesConnectable`/
+      `elementsSelectable` all `false`) since there's no mutation API for
+      this graph, unlike the Dependencies tab.
+- [x] Wired into `App.jsx`'s `VIEW_TABS` as "Arquitectura", third tab.
+- [x] `npm run build:ui`: succeeded (`index-BcF4I95Y.js`, `index-Cl3eaJL-.css`).
+- [x] Manual check: `curl /` confirmed `index.html` references the new
+      asset filenames. Bonus real-graph check (not skipped): wrote a
+      throwaway script that registers a temp project with a real
+      `graphify-out/graph.json` (3 nodes, 2 edges) via
+      `project-manager.registerProject`, starts `createServer` in-process,
+      and curls `/api/projects/:id/status` — confirmed `archGraph` comes
+      back correctly normalized (`{id,label,kind}` nodes / `{from,to,kind}`
+      edges), matching exactly what `ArchitectureTab.jsx` expects. **No
+      interactive browser click-through was performed** — same disclosure
+      as T2, only HTTP-level/data verification, not visual/interactive.
+- [x] Commit (`0746dcb`).
 
 ## Acceptance criteria
 - Opening the live dashboard for a project shows Progress and Architecture
   tabs alongside the existing dependency graph, without running `status
-  --html`.
+  --html`. — **Met**: all three tabs are wired in `App.jsx`'s `VIEW_TABS`;
+  end-to-end data flow (real project → endpoint → `archGraph` → rendered
+  React Flow nodes/edges shape) verified via the T3 throwaway script. No
+  interactive browser click-through was ever performed across T2/T3 —
+  disclosed explicitly in both.
 - New backend endpoint covered by a `node --test` test (RED confirmed before
-  GREEN).
-- `npm run build:ui` succeeds after each frontend task.
+  GREEN). — **Met** (T1).
+- `npm run build:ui` succeeds after each frontend task. — **Met** (T2, T3).
 - No new regressions in `test/dashboard.test.mjs`, `test/frontend.test.mjs`,
   `test/cli-dashboard.test.mjs`, `test/status.mjs` beyond the documented
-  pre-existing `terminal-drawer.test.mjs` failures.
+  pre-existing failures. — **Met, note widened**: T1 found the pre-existing
+  failure set is actually 9 tests (all legacy vanilla-SPA related,
+  `E4S1-*`/`4.3-1*`/`4.3-2b`), not just the single `terminal-drawer.test.mjs`
+  case originally flagged — confirmed via `git stash` to exist identically
+  on the clean pre-T1 checkout, so still zero new regressions.
 
 ## Checks
 - [x] T1 done, tested, committed (`5efb800`).
-- [x] T2 done, built, manually checked, committed.
-- [ ] T3 done, built, manually checked, committed.
+- [x] T2 done, built, manually checked, committed (`41d6da5`).
+- [x] T3 done, built, manually checked, committed (`0746dcb`).
