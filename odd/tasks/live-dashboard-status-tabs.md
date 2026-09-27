@@ -157,3 +157,32 @@ Route: delegated direct (writer trigger — new `ArchitectureTab.jsx` +
 - [x] T1 done, tested, committed (`5efb800`).
 - [x] T2 done, built, manually checked, committed (`41d6da5`).
 - [x] T3 done, built, manually checked, committed (`cd90c57`).
+
+### Native review assessment (RDD) — skipped, unavailable (infra limit)
+RDD is `on` (global). Combined assessment against branch point `466f089`
+(`--committed-only`, `.codegraph/` excluded via confirmed untracked
+inventory digest): `risk: medium`, 14 files, 1239 changed lines,
+`review_due: true` (`slice_budget_reached`). User consented (`granted`) to
+review; `gentle-ai review start` failed closed with
+`lens_context_budget_exceeded` — the candidate's reviewer evidence exceeds
+the native context budget and "is never truncated".
+
+Per-commit retry (isolated `git worktree` per commit, reviewed against its
+own immediate parent, per the tool's own "split into smaller candidates"
+guidance): T1 alone (195 lines) and T3 alone (229 lines) are `under_budget`
+(no review needed there). **T2 alone (522 lines, 7 files) still hit the same
+`lens_context_budget_exceeded`** even after user consent — root cause is the
+committed minified frontend bundle itself
+(`src/dashboard/public/assets/index-BapFwsKo.js`, ~762KB), not authored line
+count. There is no supported flag to exclude a tracked path from the
+review's diff scope, so further slicing cannot succeed while a built JS
+bundle is committed in the same tree as source changes.
+
+User decision (asked directly, `lens_context_budget_exceeded` is a
+documented terminal reason code with prescribed continuations, not treated
+as a Gentle AI defect): **skip review for this feature**. RDD stays enabled;
+the reviewed boundary does NOT advance past `466f089` for this lineage (T2's
+522 lines remain formally unreviewed). Push, PR, and merge remain separate,
+user-owned decisions under ordinary repository policy, unaffected either
+way. Temporary review worktrees (`review-t1`/`review-t2`/`review-t3` under
+`../un-specweaver-worktrees/`) were removed after use.
