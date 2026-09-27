@@ -401,6 +401,49 @@ test('status desde el CLI: terminal, --html escribe el dashboard, --json el mode
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// --- T5: `architecture` como paso standalone, fuera del pipeline completo de status ---
+//
+// Reusa exactamente readArchGraph()/classifyDiagramType() (mismas funciones que el endpoint
+// del dashboard y renderHtml()) contra un proyecto dado, sin correr collectStatus() completo
+// (BMAD/OpenSpec/decisiones/etc.) — solo lo minimo (detectGraphify + la ruta del grafo).
+
+test('architecture desde el CLI: clasifica el mismo grafo que readArchGraph()/classifyDiagramType(), con o sin --json', () => {
+  const dir = graphProject(
+    [
+      { id: 'src/app.mjs', label: 'app.mjs', kind: 'module' },
+      { id: 'src/util.mjs', label: 'util.mjs', kind: 'module' },
+      { id: 'src/app.mjs#run', label: 'run()', kind: 'function' },
+    ],
+    [
+      { source: 'src/app.mjs', target: 'src/util.mjs', kind: 'imports' },
+      { source: 'src/app.mjs#run', target: 'src/app.mjs', kind: 'defines' },
+    ],
+  );
+  const out = execFileSync('node', [CLI, 'architecture'], { cwd: dir, stdio: 'pipe' }).toString();
+  assert.match(out, /component/);
+  assert.match(out, /Nodos: 3/);
+  assert.match(out, /Aristas: 2/);
+  // tambien acepta la ruta como argumento posicional, igual que `status [dir]`
+  const out2 = execFileSync('node', [CLI, 'architecture', dir], { stdio: 'pipe' }).toString();
+  assert.match(out2, /Nodos: 3/);
+
+  const j = JSON.parse(execFileSync('node', [CLI, 'architecture', '--json'], { cwd: dir, stdio: 'pipe' }).toString());
+  assert.equal(j.archGraph.diagramType, 'component');
+  assert.equal(j.archGraph.nodes.length, 3);
+  assert.equal(j.archGraph.edges.length, 2);
+  assert.equal(j.archGraph.nodes.find((n) => n.id === 'src/app.mjs').group, 'module');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('architecture desde el CLI: sin graphify-out/graph.json, no revienta y avisa (exit 0)', () => {
+  const dir = midProject();
+  const out = execFileSync('node', [CLI, 'architecture'], { cwd: dir, stdio: 'pipe' }).toString();
+  assert.match(out, /Sin grafo de arquitectura disponible/);
+  const j = JSON.parse(execFileSync('node', [CLI, 'architecture', '--json'], { cwd: dir, stdio: 'pipe' }).toString());
+  assert.equal(j.archGraph, null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // --- cerrar: validar y archivar como comando, no como recordatorio ----------------------
 import { closable, closeChanges, unarchivedDone } from '../src/close.mjs';
 

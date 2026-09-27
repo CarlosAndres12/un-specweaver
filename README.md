@@ -331,7 +331,7 @@ reporta como "configurado; el grafo aparece con el primer codigo". No es un pend
 
 ## Comandos del CLI
 
-Quince comandos. La ayuda sale del mismo codigo que ejecuta, asi que no puede mentir:
+Dieciseis comandos. La ayuda sale del mismo codigo que ejecuta, asi que no puede mentir:
 
 ```bash
 npx un-specweaver --help              # ayuda completa, sale 1 sin comando
@@ -341,6 +341,7 @@ npx un-specweaver history [FR-21]     # historia de un requisito, o ranking de l
 npx un-specweaver close [ids|--done]  # cierra stories terminadas: valida y archiva su spec
 npx un-specweaver status [dir]        # en que va: fases, changes, sprint, requisitos, decisiones
 npx un-specweaver status --open       # lo mismo como .un-specweaver/dashboard.html, en el navegador
+npx un-specweaver architecture [dir]  # clasifica el diagrama de arquitectura, sin correr status completo
 ```
 
 Sin comando imprime la ayuda y sale 1; comando o flag desconocido sale 2. Ojo: `--help`
@@ -402,6 +403,7 @@ terminadas sin cerrar, y `/sw:build` lo invoca en su paso de cierre.
 | `context [dir]` | lista los artefactos de planeacion a cargar |
 | `history [FR-21]` | historial de decisiones por requisito, o ranking de los que mas cambian |
 | `status [dir]` | en que va el proyecto: fases, changes, sprint, requisitos, decisiones |
+| `architecture [dir]` | clasifica el diagrama de arquitectura (component/package/c4-container), standalone |
 | `vendors` | muestra las versiones pineadas |
 | `dashboard` / `ui` | dashboard web multi-proyecto |
 
@@ -509,6 +511,20 @@ npx un-specweaver status [dir] [--html] [--open] [--json]
   requisitos y el historial de decisiones en una sola pantalla. `--html` escribe
   `.un-specweaver/dashboard.html` (autocontenido, va al `.gitignore`); `--open` ademas lo abre;
   `--json` imprime el modelo crudo.
+
+### `architecture`
+
+```bash
+npx un-specweaver architecture [dir] [--json]
+```
+
+Corre solo la clasificacion del grafo de `graphify-out/graph.json` (la misma que alimenta la
+pestaña Arquitectura del dashboard: `readArchGraph()` + `classifyDiagramType()` en
+`src/status/render.mjs`), sin el resto del pipeline de `status` (BMAD/OpenSpec/decisiones). Dice
+que tipo de diagrama le corresponde al proyecto — `component`, `package` o `c4-container`, segun
+que campos trae el grafo — y sus grupos principales. Sin `--json` imprime un resumen humano
+(tipo, nodos, aristas, grupos); con `--json` imprime `{ archGraph }` crudo. Si no hay
+`graphify-out/graph.json`, no revienta: avisa y sale 0, igual que el estado vacio del dashboard.
 
 ### `dashboard` / `ui`
 

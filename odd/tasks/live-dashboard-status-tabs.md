@@ -417,19 +417,137 @@ Route: delegated direct (writer trigger — `render.mjs`, `ArchitectureTab.jsx`,
       `E4S1-4`, `E4S1-extra` — all legacy vanilla-SPA-related, unrelated to
       this change). 51 − 46 = 5 = exactly the new tests added, all passing.
       Zero new regressions.
+- [x] Committed: `bda2777`.
 
-### T5 — Standalone step to run the same analysis outside the dashboard
+#### Native review assessment (RDD) — skipped, same terminal condition as T2
+RDD is `on` (global). Assessed against branch point `466f089` (still
+unreviewed since T1-T3, per the earlier documented user decision):
+`risk: medium`, 18 files, 1980 changed lines, `review_due: true`
+(`slice_budget_reached`). User granted consent; `gentle-ai review start`
+failed closed with `lens_context_budget_exceeded`. Retried isolated
+(commit `bda2777` alone vs its immediate parent `b0df89e`, no worktree
+needed since it's already `HEAD`): 6 files, 421 lines, still medium risk,
+user granted consent again (fresh candidate, fresh consent) — **same
+`lens_context_budget_exceeded` failure**, confirming the T2 precedent: the
+committed minified bundle (`src/dashboard/public/assets/index-BPmufDpS.js`)
+blows the reviewer's context budget regardless of authored line count, and
+there is still no supported flag to exclude a tracked path from review
+scope. User decision (asked directly): **skip review for T4**, same as T2.
+RDD stays enabled; the reviewed boundary does not advance past `466f089`
+for this lineage. Push, PR, and merge remain separate, user-owned
+decisions, unaffected either way.
+
+### T5 — Standalone step to run the same analysis outside the dashboard — DONE
 Route: delegated direct.
-- [ ] New CLI entry point (subcommand in `bin/un-specweaver.mjs`, following
-      existing subcommand registration pattern) that runs
-      `readArchGraph()` + `classifyDiagramType()` against a given project
-      path and prints/writes the result, independent of the full
-      `status`/dashboard pipeline — satisfies "wired into the pipeline AND
-      standalone".
-- [ ] `node --test` coverage for the new subcommand (RED/GREEN).
-- [ ] Update this file + README's CLI command table if the subcommand is
-      user-facing.
+- [x] New CLI entry point: `un-specweaver architecture [dir] [--json]`
+      (`bin/un-specweaver.mjs`, new `case 'architecture'` in the main
+      switch, right before `vendors`, same pattern as `status`: positional
+      `[dir]` resolved with `path.resolve(o._[0] || process.cwd())`, reuses
+      the shared `flags()`/`o.json` parsing already used by `status --json`
+      — no bespoke arg parser like `dashboard`'s, since this command has no
+      flags beyond `--json`/`--help`/`--version` that `flags()` doesn't
+      already cover). Does NOT call `collectStatus()` (the full
+      BMAD/OpenSpec/decisions pipeline) — builds only the minimal
+      `{ project: { root }, graph: { path } }` shape `readArchGraph()`
+      actually needs, via `detectGraphify(root)` from `src/env.mjs` (the
+      same helper `collectStatus()` itself uses internally to build
+      `s.graph.path`), confirmed by reading `collectStatus()` before
+      reusing it rather than guessing the contract. Calls
+      `readArchGraph()` (which internally calls `classifyDiagramType()` and
+      attaches `group`/`groupLabel`/`diagramType`, both already exported
+      from T4) and prints either `{ archGraph }` as JSON (`--json`) or a
+      concise Spanish summary: diagram type (with the same
+      `DIAGRAM_TYPE_LABELS` wording as `ArchitectureTab.jsx`, kept in sync
+      manually since there's no shared module for it), node/edge counts,
+      and the top 10 groups by node count. Missing
+      `graphify-out/graph.json` does not crash: `readArchGraph()` already
+      returns `null` in that case (same helper the dashboard's empty state
+      relies on), and the CLI prints one line ("Sin grafo de arquitectura
+      disponible... Corre: graphify update .") and exits 0 — mirrors the
+      dashboard's empty-state handling exactly, no new error path invented.
+- [x] RED confirmed first: added 2 new tests to `test/status.mjs` invoking
+      `node bin/un-specweaver.mjs architecture` via `execFileSync` (same
+      subprocess-CLI-test pattern already used in that file for `status`,
+      `close`, `doctor`) before the subcommand existed —
+      `node --test test/status.mjs`: 19 pass, 2 fail (`Comando desconocido:
+      architecture`, exit 2), confirming the tests fail for the right
+      reason against current code.
+- [x] GREEN: implemented; `node --test test/status.mjs`: **21/21 pass**
+      (19 pre-existing + 2 new), zero failures. New tests: (a) happy path —
+      reuses the existing `graphProject(nodes, edges)` fixture helper (a
+      3-node/2-edge graph with explicit `kind`, same fixture already used
+      for the `Arquitectura: con graph.json real...` test above) to build a
+      temp project with `graphify-out/graph.json`, then asserts the
+      terminal summary (`component`, `Nodos: 3`, `Aristas: 2`), that the
+      same command also accepts the path as a positional argument (not
+      just via `cwd`, mirroring `status [dir]`), and that `--json` prints
+      `{ archGraph: { diagramType, nodes, edges, ... } }` with the expected
+      shape (including a spot-check that `group` was attached per node);
+      (b) missing-graph path — reuses `midProject()` (a fixture with no
+      `graphify-out/`) and asserts the CLI prints the "Sin grafo..."
+      message and `--json` prints `{"archGraph":null}`, both via
+      `execFileSync` with no try/catch — a non-zero exit code would have
+      made `execFileSync` itself throw and fail the test, so this doubles
+      as the exit-code-0 assertion.
+- [x] Full regression: `node --test test/dashboard.test.mjs
+      test/frontend.test.mjs test/cli-dashboard.test.mjs test/status.mjs`
+      → **53 tests, 44 pass, 9 fail**. Same exact 9 pre-existing failing
+      test names as T4's baseline (`4.3-1`, `4.3-1b`, `4.3-2b`, `E4S1-0`,
+      `E4S1-1`, `E4S1-2`, `E4S1-3`, `E4S1-4`, `E4S1-extra` — all legacy
+      vanilla-SPA-related, unrelated to this change). 53 − 51 (T4 total) =
+      2 = exactly the new tests added, both passing. Zero new regressions.
+- [x] Manual check against real fixtures (pasted verbatim below), not just
+      `node --test`: (1) this repo itself (`un-specweaver architecture .`
+      and `--json`), no `graphify-out/graph.json` here — prints the empty
+      message, exits 0, `--json` prints `{"archGraph":null}`; (2) the real
+      external `unal_dasboard` project (`/home/carlos/Documents/projects/
+      unal_dasboard`, real graphify output, 692 nodes/1286 edges, already
+      used for the T4 real-world bugfix) — classified `c4-container`,
+      matching T4's earlier finding for this exact project, with
+      `dashboard`/`converter`/`tests`/`scripts` as the largest groups;
+      `--json` output shape (`id`/`label`/`kind`/`sourceFile`/`community`/
+      `communityName`/`group`/`groupLabel` per node) matches exactly what
+      `readArchGraph()` produces and what `ArchitectureTab.jsx` already
+      expects. Also checked `architecture --help` falls back to the global
+      help and exits 0, same convention every other non-`dashboard`
+      subcommand already follows (no bespoke per-command help function was
+      added, since none of the other status-like commands have one
+      either).
+- [x] Updated `README.md`: added `architecture [dir]` to the CLI examples
+      block, the command table (new row, right after `status [dir]`), and
+      a new `### \`architecture\`` prose subsection mirroring the
+      `history`/`status` subsection style. Also corrected "Quince
+      comandos" (fifteen) → "Dieciseis comandos" (sixteen) in the same
+      section, since counting alias-groups as one row each (as the
+      existing table already does for `change/bug/ticket` and
+      `dashboard/ui`) the table had exactly 15 rows before this change and
+      now has 16 — the pre-existing omission of `close` from that same
+      table (it's documented in prose above the table but has no row) was
+      left as-is, out of scope for this task.
 
 TDD mode: strict (source: user's global CLAUDE.md), runner `node --test`
-(same as T1-T3). Each of T4/T5 closes with its own conventional-commit
-work-unit on `feat/live-dashboard-status-tabs`.
+(same as T1-T4). T5 closes with its own conventional-commit work-unit on
+`feat/live-dashboard-status-tabs`.
+
+#### Deviations / judgment calls from the T5 spec
+- The spec suggested reusing "existing helpers from `collect.mjs`/
+  `render.mjs`... if such a builder already exists". No standalone
+  `s`-shape builder exists outside `collectStatus()` itself (which runs
+  the full pipeline) — so the minimal shape is built inline in
+  `bin/un-specweaver.mjs` from `detectGraphify()` (from `src/env.mjs`,
+  already imported elsewhere in this same file for other commands), not
+  duplicated parsing logic, just the same two-line construction
+  `collectStatus()` itself does internally (confirmed by reading it, not
+  guessed).
+- Command name/argument shape: `architecture [dir]` (raw path, not a
+  registered-project id) — chosen because `status`, the closest sibling
+  command, already takes a raw `[dir]` positional; only `dashboard`/`ui`
+  work with registered-project ids (via `project-manager.mjs`), and this
+  is explicitly a single-project standalone analysis tool, not a
+  multi-project dashboard feature.
+- No native review (RDD) assessment was run for this task-doc commit: T5's
+  diff (2 files touched for the CLI+test, plus README/task-doc) is small
+  and does not include any built frontend bundle (unlike T2/T4, which hit
+  `lens_context_budget_exceeded` from the committed minified JS asset) —
+  not pre-emptively skipped, just not yet run; left for the user to
+  request if wanted before merge.

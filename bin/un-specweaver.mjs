@@ -22,6 +22,8 @@ USO
                                    que tienen sus tareas completas · --dry-run: solo lista)
   npx un-specweaver status [dir]   en que va el proyecto: fases, changes, sprint, requisitos, decisiones
                                    --html escribe .un-specweaver/dashboard.html · --open lo abre · --json
+  npx un-specweaver architecture [dir]  clasifica el diagrama de arquitectura (component/package/
+                                   c4-container) desde graphify-out/graph.json, sin correr status --json
   npx un-specweaver vendors           muestra las versiones pineadas
   npx un-specweaver dashboard [--port <n>] [--host <h>] [--open]
   npx un-specweaver ui               alias de dashboard
@@ -466,6 +468,38 @@ if (cmd === 'dashboard' || cmd === 'ui') {
         process.exit(0);
       }
       console.log(renderTerminal(model, lang));
+      process.exit(0);
+    }
+
+    case 'architecture': {
+      // Mismo analisis que la pestaña Arquitectura del dashboard (readArchGraph +
+      // classifyDiagramType, src/status/render.mjs), pero standalone: solo lo minimo que esas
+      // funciones necesitan (detectGraphify + la ruta del grafo), sin correr collectStatus()
+      // completo (BMAD/OpenSpec/decisiones/etc.) — para quien solo quiere la clasificacion del
+      // diagrama sin el resto del pipeline de status/dashboard.
+      const { detectGraphify } = await import('../src/env.mjs');
+      const { readArchGraph } = await import('../src/status/render.mjs');
+      const root = path.resolve(o._[0] || process.cwd());
+      const g = detectGraphify(root);
+      const archGraph = readArchGraph({ project: { root }, graph: { path: g.graph } });
+      if (o.json) { console.log(JSON.stringify({ archGraph }, null, 2)); process.exit(0); }
+      if (!archGraph) {
+        console.log('Sin grafo de arquitectura disponible (requiere graphify-out/graph.json). Corre: graphify update .');
+        process.exit(0);
+      }
+      const DIAGRAM_TYPE_LABELS = { component: 'Diagrama de componentes', package: 'Diagrama de paquetes', 'c4-container': 'Diagrama de contenedores (C4)' };
+      const groupCounts = new Map();
+      for (const n of archGraph.nodes) {
+        const label = n.groupLabel || n.group || 'other';
+        groupCounts.set(label, (groupCounts.get(label) || 0) + 1);
+      }
+      const topGroups = [...groupCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+      console.log(`\nArquitectura: ${root}`);
+      console.log(`Tipo: ${archGraph.diagramType || '(sin clasificar)'}${DIAGRAM_TYPE_LABELS[archGraph.diagramType] ? ` — ${DIAGRAM_TYPE_LABELS[archGraph.diagramType]}` : ''}`);
+      console.log(`Nodos: ${archGraph.nodes.length}   Aristas: ${archGraph.edges.length}`);
+      console.log('\nGrupos principales:');
+      for (const [label, count] of topGroups) console.log(`  ${String(label).padEnd(32)} ${count} nodo(s)`);
+      console.log('');
       process.exit(0);
     }
 
