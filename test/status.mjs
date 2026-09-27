@@ -24,6 +24,15 @@ function midProject() {
   return dir;
 }
 
+// Un proyecto minimo con un graph.json de graphify ya generado (graphify-out/), para probar
+// la pestaña de Arquitectura sin necesitar el binario real de graphify.
+function graphProject(nodes, edges) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'status-arch-'));
+  fs.mkdirSync(path.join(dir, 'graphify-out'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'graphify-out', 'graph.json'), JSON.stringify({ nodes, edges }));
+  return dir;
+}
+
 test('taskProgress cuenta casillas y nada mas', () => {
   assert.deepEqual(taskProgress('- [x] 1.1 a\n- [ ] 1.2 b\n- texto suelto\n  - [X] 2.1 c\n'), { done: 2, total: 3 });
   assert.deepEqual(taskProgress(''), { done: 0, total: 0 });
@@ -152,6 +161,84 @@ test('el HTML es autocontenido, bilingue y escapa lo que viene de los archivos',
     assert.match(html, /function mdBlock/, 'los documentos se renderizan en cliente');
     assert.match(html, /\\u003c/, 'el JSON embebido escapa < para no cerrar el script');
   }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// Nota sobre el estilo de estos tests: igual que el resto del archivo, no hay jsdom ni
+// navegador: todo lo que hero()/flow()/memorySec() (y ahora topTabs()/architectureSec())
+// producen es CODIGO FUENTE de cliente, embebido tal cual dentro de <script> (con ${} escapado
+// a \${} para que Node no lo evalue). Lo unico que Node evalua de verdad es <style>, el <title>
+// y el bloque de datos JSON (${json}, sin escapar). Por eso estos tests verifican: (a) que las
+// cadenas literales (sin interpolar) que arman la estructura aparecen en el HTML, igual que
+// `data-k="story"` en el test de autocontenido; y (b) que el modelo/UI embebido en el JSON trae
+// lo correcto, igual que `/"id":"FR001"/` en ese mismo test.
+test('el HTML tiene una barra de pestañas de nivel superior: Progreso y Arquitectura', () => {
+  const dir = midProject();
+  const s = collectStatus(dir);
+  for (const lang of ['es', 'en']) {
+    const html = renderHtml(s, lang);
+    assert.match(html, /data-tab="progress"/);
+    assert.match(html, /data-tab="architecture"/);
+    // Progreso arranca visible, Arquitectura no: el manejador generico de click (ya
+    // existente, bar.closest('.canvas, section')) hace el resto al hacer click.
+    assert.match(html, /<div class="pane on" data-pane="progress">/);
+    assert.match(html, /<div class="pane" data-pane="architecture">/);
+    // la barra de pestañas y los dos paneles viven bajo la misma <section>, en el propio
+    // codigo que arma el DOM: es lo que el manejador generico usa (bar.closest('.canvas,
+    // section')) para encontrar los .pane[data-pane] a togglear cuando se hace click
+    const renderCall = html.match(/<section class="apptabs">[\s\S]*?<\/main><\/section>/);
+    assert.ok(renderCall, 'la section que envuelve la barra y los paneles existe en el render');
+    assert.match(renderCall[0], /\$\{topTabs\(\)\}/);
+    assert.match(renderCall[0], /data-pane="progress"/);
+    assert.match(renderCall[0], /data-pane="architecture"/);
+    // las etiquetas bilingues viajan en el bloque de datos, que si evalua Node
+    assert.match(html, lang === 'es' ? /"tabProgress":"Progreso"/ : /"tabProgress":"Progress"/);
+    assert.match(html, lang === 'es' ? /"tabArchitecture":"Arquitectura"/ : /"tabArchitecture":"Architecture"/);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Arquitectura: sin graph.json de graphify, no se embebe grafo y el cliente sabe mostrar el vacio', () => {
+  const dir = midProject();
+  const s = collectStatus(dir);
+  assert.equal(s.graph.path, null, 'el fixture no trae graphify-out/graph.json');
+  for (const lang of ['es', 'en']) {
+    const html = renderHtml(s, lang);
+    assert.match(html, /"archGraph":null/, 'sin graph.json no hay nada que dibujar: no se inventa data');
+    assert.match(html, /function archEmpty/, 'el cliente tiene una rama explicita para el estado vacio');
+    assert.match(html, /if \(!G \|\| !G\.nodes \|\| !G\.nodes\.length\) return archEmpty\(\);/, 'architectureSec() no revienta sin grafo');
+    assert.match(html, lang === 'es' ? /"archNone":"Sin grafo todavia/ : /"archNone":"No graph yet/);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Arquitectura: con graph.json real, los nodos y aristas normalizados viajan embebidos para que el cliente los dibuje', () => {
+  const dir = graphProject(
+    [
+      { id: 'src/app.mjs', label: 'app.mjs', kind: 'module' },
+      { id: 'src/util.mjs', label: 'util.mjs', kind: 'module' },
+      { id: 'src/app.mjs#run', label: 'run()', kind: 'function' },
+    ],
+    [
+      { source: 'src/app.mjs', target: 'src/util.mjs', kind: 'imports' },
+      { source: 'src/app.mjs#run', target: 'src/app.mjs', kind: 'defines' },
+    ],
+  );
+  const s = collectStatus(dir);
+  assert.equal(s.graph.path, 'graphify-out/graph.json');
+  const html = renderHtml(s, 'es');
+  // el grafo normalizado (id/label/kind, from/to) viaja en el JSON: nada de fetch en runtime,
+  // sigue autocontenido
+  assert.match(html, /"archGraph":\{"nodes":\[/);
+  assert.match(html, /"id":"src\/app\.mjs","label":"app\.mjs","kind":"module"/);
+  assert.match(html, /"label":"run\(\)"/);
+  assert.match(html, /"from":"src\/app\.mjs#run","to":"src\/app\.mjs","kind":"defines"/);
+  // el cliente sabe dibujar el SVG a partir de ese grafo (layout circular con las variables
+  // CSS del tema, no colores fijos)
+  assert.match(html, /function architectureSec/);
+  assert.match(html, /class="archsvg"/);
+  assert.match(html, /kindColor/);
+  assert.doesNotMatch(html, /<script src=|https?:\/\/cdn|<link /, 'sigue autocontenido con el grafo embebido');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
