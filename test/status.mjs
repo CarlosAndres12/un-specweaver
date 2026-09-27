@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { collectStatus, taskProgress, readChanges, sprintStatus } from '../src/status/collect.mjs';
-import { renderTerminal, renderHtml, readArchGraph } from '../src/status/render.mjs';
+import { renderTerminal, renderHtml, readArchGraph, classifyDiagramType } from '../src/status/render.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const CLI = path.join(ROOT, 'bin', 'un-specweaver.mjs');
@@ -265,7 +265,126 @@ test('Arquitectura: acepta el formato node-link de NetworkX (edges bajo "links",
   const g = readArchGraph(s);
   assert.ok(g, 'con nodes+links reales, no deberia devolver null');
   assert.equal(g.nodes.length, 2);
-  assert.deepEqual(g.edges, [{ from: 'src/app.mjs', to: 'src/util.mjs', kind: 'imports' }]);
+  // relation es el nuevo campo (T4): el fixture no trae "relation" en sus links, asi que
+  // cae en '' — kind sigue viajando igual que antes (compatibilidad con node-link "kind").
+  assert.deepEqual(g.edges, [{ from: 'src/app.mjs', to: 'src/util.mjs', kind: 'imports', relation: '' }]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- T4: clasificacion de tipo de diagrama (Component / Package / C4-Container) ---
+//
+// graphify real (confirmado contra unal_dasboard, 692 nodos) no trae kind/type/category en
+// absoluto: readArchGraph() colapsaba silenciosamente todo a kind:''. Lo que si trae es
+// source_file (ruta real, a veces '' para nodos no-codigo) y community/community_name
+// (clustering ya calculado por graphify). classifyDiagramType() es la funcion pura que decide,
+// a partir de esos campos ya normalizados por readArchGraph(), que tipo de diagrama corresponde
+// y como agrupar cada nodo — sin LLM, sin I/O, facil de testear con fixtures en memoria.
+
+test('classifyDiagramType: con kind en todos los nodos (fixtures existentes), sigue siendo component agrupado por kind', () => {
+  const archGraph = {
+    nodes: [
+      { id: 'a', label: 'a', kind: 'module' },
+      { id: 'b', label: 'b', kind: 'module' },
+      { id: 'c', label: 'c', kind: 'function' },
+    ],
+    edges: [],
+  };
+  const result = classifyDiagramType(archGraph);
+  assert.equal(result.diagramType, 'component');
+  assert.equal(result.groups.get('a').group, 'module');
+  assert.equal(result.groups.get('c').group, 'function');
+});
+
+test('classifyDiagramType: sin kind, source_file en pocos directorios de alto que cubren muchos nodos cada uno -> c4-container', () => {
+  // 9 nodos, 3 directorios de tope (converter/api/ui), 3 nodos cada uno: 9/3 = 3 >= 3, 3 <= 8.
+  const archGraph = {
+    nodes: [
+      { id: 'a1', label: 'a1', kind: '', sourceFile: 'converter/store/loader.py', community: '1' },
+      { id: 'a2', label: 'a2', kind: '', sourceFile: 'converter/store/writer.py', community: '1' },
+      { id: 'a3', label: 'a3', kind: '', sourceFile: 'converter/utils/helpers.py', community: '1' },
+      { id: 'b1', label: 'b1', kind: '', sourceFile: 'api/routes/user.py', community: '2' },
+      { id: 'b2', label: 'b2', kind: '', sourceFile: 'api/routes/order.py', community: '2' },
+      { id: 'b3', label: 'b3', kind: '', sourceFile: 'api/models/user.py', community: '2' },
+      { id: 'c1', label: 'c1', kind: '', sourceFile: 'ui/components/Button.jsx', community: '3' },
+      { id: 'c2', label: 'c2', kind: '', sourceFile: 'ui/components/Modal.jsx', community: '3' },
+      { id: 'c3', label: 'c3', kind: '', sourceFile: 'ui/pages/Home.jsx', community: '3' },
+    ],
+    edges: [],
+  };
+  const result = classifyDiagramType(archGraph);
+  assert.equal(result.diagramType, 'c4-container');
+  assert.equal(result.groups.get('a1').group, 'converter');
+  assert.equal(result.groups.get('b3').group, 'api');
+  assert.equal(result.groups.get('c2').group, 'ui');
+});
+
+test('classifyDiagramType: sin kind, muchos directorios de tope pequenos (baja cobertura promedio) -> package agrupado por directorio completo', () => {
+  // 5 nodos, 5 directorios de tope distintos: 5/5 = 1 < 3 -> no c4, cae a package.
+  const archGraph = {
+    nodes: [
+      { id: 'p1', label: 'p1', kind: '', sourceFile: 'moduleA/sub/file1.py', community: '' },
+      { id: 'p2', label: 'p2', kind: '', sourceFile: 'moduleB/sub/file2.py', community: '' },
+      { id: 'p3', label: 'p3', kind: '', sourceFile: 'moduleC/file3.py', community: '' },
+      { id: 'p4', label: 'p4', kind: '', sourceFile: 'moduleD/file4.py', community: '' },
+      { id: 'p5', label: 'p5', kind: '', sourceFile: 'moduleE/file5.py', community: '' },
+    ],
+    edges: [],
+  };
+  const result = classifyDiagramType(archGraph);
+  assert.equal(result.diagramType, 'package');
+  assert.equal(result.groups.get('p1').group, 'moduleA/sub');
+  assert.equal(result.groups.get('p3').group, 'moduleC');
+});
+
+test('classifyDiagramType: sin kind y sin source_file en absoluto -> component agrupado por community', () => {
+  const archGraph = {
+    nodes: [
+      { id: 'x1', label: 'x1', kind: '', sourceFile: '', community: '5', communityName: 'Core' },
+      { id: 'x2', label: 'x2', kind: '', sourceFile: '', community: '5', communityName: 'Core' },
+      { id: 'x3', label: 'x3', kind: '', sourceFile: '', community: '7', communityName: 'Utils' },
+    ],
+    edges: [],
+  };
+  const result = classifyDiagramType(archGraph);
+  assert.equal(result.diagramType, 'component');
+  assert.equal(result.groups.get('x1').group, '5');
+  assert.equal(result.groups.get('x1').groupLabel, 'Core');
+  assert.equal(result.groups.get('x3').group, '7');
+});
+
+test('readArchGraph: grafo real de graphify (sin kind, con source_file/community, edges con relation) trae diagramType y group/groupLabel por nodo', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'status-arch-real-'));
+  fs.mkdirSync(path.join(dir, 'graphify-out'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'graphify-out', 'graph.json'),
+    JSON.stringify({
+      directed: true,
+      multigraph: false,
+      graph: {},
+      nodes: [
+        { id: 'converter/store/loader.py', source_file: 'converter/store/loader.py', community: 1, community_name: 'Store' },
+        { id: 'converter/store/writer.py', source_file: 'converter/store/writer.py', community: 1, community_name: 'Store' },
+        { id: 'converter/utils/helpers.py', source_file: 'converter/utils/helpers.py', community: 1, community_name: 'Store' },
+        { id: 'api/routes/user.py', source_file: 'api/routes/user.py', community: 2, community_name: 'Api' },
+        { id: 'api/routes/order.py', source_file: 'api/routes/order.py', community: 2, community_name: 'Api' },
+        { id: 'api/models/user.py', source_file: 'api/models/user.py', community: 2, community_name: 'Api' },
+      ],
+      links: [{ source: 'converter/store/loader.py', target: 'converter/store/writer.py', relation: 'imports' }],
+    }),
+  );
+  const s = collectStatus(dir);
+  const g = readArchGraph(s);
+  assert.ok(g, 'con nodes+links reales, no deberia devolver null');
+  // 6 nodos, 2 directorios de tope (converter/api), 3 cada uno: 6/2 = 3 >= 3 -> c4-container.
+  assert.equal(g.diagramType, 'c4-container');
+  const loader = g.nodes.find((n) => n.id === 'converter/store/loader.py');
+  assert.equal(loader.sourceFile, 'converter/store/loader.py');
+  assert.equal(loader.community, '1');
+  assert.equal(loader.communityName, 'Store');
+  assert.equal(loader.group, 'converter');
+  assert.equal(loader.groupLabel, 'converter');
+  assert.equal(g.edges[0].relation, 'imports');
+  assert.equal(g.edges[0].kind, '', 'kind sigue existiendo (compatibilidad), vacio cuando no hay kind/type real');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

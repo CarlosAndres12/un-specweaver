@@ -303,3 +303,133 @@ is data, not code, no commit):
 3. `node --test test/dashboard.test.mjs test/frontend.test.mjs
    test/cli-dashboard.test.mjs test/status.mjs`: 37/46 pass, same 9
    pre-existing failures, zero new regressions (46 = 45 + 1 new test).
+
+## Extension: diagram-type classification (Component / Package / C4-Container)
+
+User request: the Architecture tab should not be locked to one flat
+kind-grouped graph; an agent-style step should look at the target project
+and produce whichever diagram type(s) from a broad engineering taxonomy
+(UML behavioral/structural, ERD/DFD, C4, cloud topology, EDA) actually fit.
+Scoped down after discussion: **start small** — pick only among diagram
+types graphify's own data can actually support today (Component, Package,
+C4-Container), not a full source-reading LLM agent yet. User also wants
+this runnable both wired into the existing pipeline (feeds this tab) and as
+a standalone step.
+
+**Bug found during design, verified against the real `unal_dasboard`
+graphify output (692 nodes)**: real graphify nodes have NO `kind`/`type`/
+`category` field at all — `readArchGraph()`'s node-kind extraction
+(`render.mjs:213`) silently collapses to `''` for every node on real data,
+so the current "grouped by kind" Component view is actually one unsorted
+column for real projects, not a bug the fixtures caught (fixtures always
+set `kind` explicitly). Real edges carry `relation` (`imports`,
+`re_exports`, `contains`, …), not `kind`/`type` either — edge semantics are
+silently dropped too (`render.mjs:221`). What real graphify DOES provide:
+`source_file` (86 distinct real directory paths in the sample) and
+`community`/`community_name` (37 pre-computed clusters from graphify's own
+analysis) per node. These are the actual signals available for
+classification/grouping — not a new heuristic invented from scratch.
+
+### T4 — Fix graphify field extraction; add diagram-type classification + grouping — DONE
+Route: delegated direct (writer trigger — `render.mjs`, `ArchitectureTab.jsx`,
+`test/status.mjs`, 3+ non-trivial files).
+- [x] `readArchGraph()` (`src/status/render.mjs`): now reads `source_file`
+      (→ `sourceFile`), `community` (stringified), `community_name` (→
+      `communityName`) per node, alongside the existing `kind/type/category`
+      fallback (kept as-is for the hand-written fixtures already in
+      `test/status.mjs`); reads `relation` per edge alongside the existing
+      `kind/type` fallback (kept, not removed).
+- [x] New exported pure function `classifyDiagramType(archGraph)` in
+      `render.mjs`: no I/O, no LLM, takes the already-normalized
+      `{nodes, edges}` shape (not raw graphify JSON) so it's directly
+      unit-testable with in-memory fixtures. Returns
+      `{ diagramType, groups: Map<nodeId, {group, groupLabel}> }`.
+      Rules implemented exactly as scoped: (a) every node has non-empty
+      `kind` → `component`, grouped by `kind` (today's behavior, byte-for-
+      byte unchanged); (b) else, top-level `sourceFile` segment counted —
+      if there are non-empty segments, `distinctSegments.size <= 8`, and
+      `nodeCount / distinctSegments.size >= 3` → `c4-container`, grouped by
+      that top-level segment (nodes with empty `sourceFile` fall back to
+      `community`/`'other'`); (c) else if any node has `sourceFile` →
+      `package`, grouped by the full directory portion (everything before
+      the last `/`; a file directly at the root groups under `''`/label
+      `'(root)'` — not explicitly specified in the task, my own reasonable
+      default, flagging it as a minor decision beyond the letter of the
+      spec); (d) else (no `sourceFile` at all) → `component`, grouped by
+      `community` (label `communityName` if present).
+- [x] `readArchGraph()` wires `classifyDiagramType()` in: attaches
+      `group`/`groupLabel` per node and a top-level `archGraph.diagramType`.
+      All existing fields (`kind`, `id`, `label`, edge `kind`) are kept,
+      only new fields were added.
+- [x] RED confirmed first: added the `classifyDiagramType` import to
+      `test/status.mjs` before the export existed —
+      `node --test test/status.mjs` failed at module-load time
+      (`SyntaxError: ... does not provide an export named
+      'classifyDiagramType'`), i.e. the whole file failed to even run,
+      which counts as RED for every new test in it.
+- [x] GREEN: implemented; added 5 new tests to `test/status.mjs` — 4 pure
+      `classifyDiagramType()` unit tests (one per branch: legacy-`kind`
+      fixture unaffected, `c4-container` via 9-node/3-top-dir fixture,
+      `package` via 5-node/5-distinct-top-dir fixture, `component`-via-
+      community-only fallback with no `sourceFile` at all) plus 1
+      integration test through `readArchGraph()` on a realistic no-`kind`
+      graphify-shaped fixture (`source_file`/`community`/`community_name`
+      on nodes, `relation` on edges, `links` not `edges`) confirming
+      `diagramType`/`group`/`groupLabel` are wired end-to-end. Also had to
+      update one pre-existing assertion (`test/status.mjs`, the
+      "acepta el formato node-link de NetworkX" test) that did
+      `assert.deepEqual(g.edges, [{from,to,kind}])` — adding the new
+      `relation` field to every edge made that a structurally different
+      object, so the expected literal now includes `relation: ''` (the
+      fixture has no `relation` field). This is a mechanical consequence of
+      adding a field alongside `kind`, not a behavior change — the fixture-
+      style (`kind`-having) classification path itself is unaffected and
+      re-verified by the first new unit test.
+      `node --test test/status.mjs`: **19/19 pass** (14 pre-existing + 5
+      new), zero failures.
+- [x] `ArchitectureTab.jsx`: `layoutGraph()` now groups by `node.group`
+      (falling back to `'other'`) instead of `node.kind`; renamed the
+      internal color helpers/`kindOrder` → `groupOrder` accordingly (pure
+      rename, same grid-layout algorithm). Added an `archGraph.diagramType`
+      label via a small `<Panel position="top-left">` from `@xyflow/react`
+      next to the toolbar (`DIAGRAM_TYPE_LABELS` maps `component`/`package`/
+      `c4-container` to a short Spanish label, falling back to a generic
+      "Diagrama de arquitectura" for an unknown/null value) — kept simple
+      per instructions, no new UI chrome beyond that one label. The
+      previous fixture-shaped (`kind`-having, classified as `component`)
+      case is visually unaffected since grouping-by-kind is exactly what
+      `classifyDiagramType()` does for that path.
+- [x] `npm run build:ui`: succeeded (`index-BPmufDpS.js`,
+      `index-Cl3eaJL-.css`, same CSS hash as T3 since no CSS changed).
+      **No interactive browser click-through was performed** for this task
+      (same disclosure as T2/T3) — verification here is
+      `node --test`/pure-function coverage plus the build succeeding, not a
+      visual/manual check against a real project's `graphify-out/graph.json`
+      run through the actual dashboard UI. The realistic-shape coverage
+      comes from the new `readArchGraph()` integration test (6-node,
+      2-top-dir → `c4-container` fixture matching the real `unal_dasboard`
+      field shapes), not a live run against `unal_dasboard` itself.
+- [x] Full suite: `node --test test/dashboard.test.mjs test/frontend.test.mjs
+      test/cli-dashboard.test.mjs test/status.mjs` → **51 tests, 42 pass, 9
+      fail**. Re-verified the baseline via `git stash`: clean checkout is
+      **46 tests, 37 pass, 9 fail**, same 9 failing test names
+      (`4.3-1`, `4.3-1b`, `4.3-2b`, `E4S1-0`, `E4S1-1`, `E4S1-2`, `E4S1-3`,
+      `E4S1-4`, `E4S1-extra` — all legacy vanilla-SPA-related, unrelated to
+      this change). 51 − 46 = 5 = exactly the new tests added, all passing.
+      Zero new regressions.
+
+### T5 — Standalone step to run the same analysis outside the dashboard
+Route: delegated direct.
+- [ ] New CLI entry point (subcommand in `bin/un-specweaver.mjs`, following
+      existing subcommand registration pattern) that runs
+      `readArchGraph()` + `classifyDiagramType()` against a given project
+      path and prints/writes the result, independent of the full
+      `status`/dashboard pipeline — satisfies "wired into the pipeline AND
+      standalone".
+- [ ] `node --test` coverage for the new subcommand (RED/GREEN).
+- [ ] Update this file + README's CLI command table if the subcommand is
+      user-facing.
+
+TDD mode: strict (source: user's global CLAUDE.md), runner `node --test`
+(same as T1-T3). Each of T4/T5 closes with its own conventional-commit
+work-unit on `feat/live-dashboard-status-tabs`.

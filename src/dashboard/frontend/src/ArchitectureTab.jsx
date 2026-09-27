@@ -1,36 +1,47 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ReactFlow, Background, Controls, MiniMap, MarkerType } from '@xyflow/react';
+import { ReactFlow, Background, Controls, MiniMap, Panel, MarkerType } from '@xyflow/react';
 
-const KIND_COLORS = ['--accent-cyan', '--accent-purple', '--accent-green', '--accent-amber', '--accent-rose'];
+const GROUP_COLORS = ['--accent-cyan', '--accent-purple', '--accent-green', '--accent-amber', '--accent-rose'];
 // Canvas (MiniMap) can't resolve CSS custom properties, so it needs literal
 // hex values — same tradeoff ArchitectureFlow's own MiniMap already makes.
-const KIND_COLORS_HEX = ['#38bdf8', '#818cf8', '#34d399', '#fbbf24', '#f43f5e'];
+const GROUP_COLORS_HEX = ['#38bdf8', '#818cf8', '#34d399', '#fbbf24', '#f43f5e'];
 
-function colorForKind(kind, kindOrder) {
-  const idx = kindOrder.indexOf(kind);
-  const varName = KIND_COLORS[idx % KIND_COLORS.length];
+// Human-readable label for archGraph.diagramType (from classifyDiagramType() in
+// src/status/render.mjs), shown near the toolbar so the view doesn't silently assume
+// "Component" for graphs that were actually classified as Package or C4-Container.
+const DIAGRAM_TYPE_LABELS = {
+  component: 'Diagrama de componentes',
+  package: 'Diagrama de paquetes',
+  'c4-container': 'Diagrama de contenedores (C4)',
+};
+
+function colorForGroup(group, groupOrder) {
+  const idx = groupOrder.indexOf(group);
+  const varName = GROUP_COLORS[idx % GROUP_COLORS.length];
   return `var(${varName})`;
 }
 
-function hexColorForKind(kind, kindOrder) {
-  const idx = kindOrder.indexOf(kind);
-  return KIND_COLORS_HEX[idx % KIND_COLORS_HEX.length];
+function hexColorForGroup(group, groupOrder) {
+  const idx = groupOrder.indexOf(group);
+  return GROUP_COLORS_HEX[idx % GROUP_COLORS_HEX.length];
 }
 
 // Graphify's JSON carries no positions, so nodes are laid out on a simple
-// deterministic grid: one column per `kind`, stacked rows within it —
-// mirrors ArchitectureFlow's own wave-column layout, no extra layout dep.
+// deterministic grid: one column per `group` (computed server-side by
+// classifyDiagramType(), grouping by kind/top-level-directory/directory/community
+// depending on the classified diagramType), stacked rows within it — mirrors
+// ArchitectureFlow's own wave-column layout, no extra layout dep.
 function layoutGraph(archGraph) {
-  const kindOrder = Array.from(new Set(archGraph.nodes.map((n) => n.kind || '')));
-  const colIndex = new Map(kindOrder.map((k, i) => [k, i]));
+  const groupOrder = Array.from(new Set(archGraph.nodes.map((n) => n.group || 'other')));
+  const colIndex = new Map(groupOrder.map((g, i) => [g, i]));
   const rowCount = new Map();
 
   const nodes = archGraph.nodes.map((n) => {
-    const kind = n.kind || '';
-    const col = colIndex.get(kind) || 0;
-    const row = rowCount.get(kind) || 0;
-    rowCount.set(kind, row + 1);
-    const color = colorForKind(kind, kindOrder);
+    const group = n.group || 'other';
+    const col = colIndex.get(group) || 0;
+    const row = rowCount.get(group) || 0;
+    rowCount.set(group, row + 1);
+    const color = colorForGroup(group, groupOrder);
     return {
       id: n.id,
       position: { x: col * 260 + 60, y: row * 90 + 60 },
@@ -56,7 +67,7 @@ function layoutGraph(archGraph) {
     style: { stroke: '#64748b' },
   }));
 
-  return { nodes, edges, kindOrder };
+  return { nodes, edges, groupOrder };
 }
 
 export default function ArchitectureTab({ projectId }) {
@@ -126,8 +137,11 @@ export default function ArchitectureTab({ projectId }) {
       >
         <Background color="#1e293b" gap={20} size={1.5} />
         <Controls showInteractive={false} position="bottom-right" />
+        <Panel position="top-left" style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+          {DIAGRAM_TYPE_LABELS[archGraph.diagramType] || 'Diagrama de arquitectura'}
+        </Panel>
         <MiniMap
-          nodeColor={(n) => hexColorForKind(archGraph.nodes.find((x) => x.id === n.id)?.kind || '', layout.kindOrder)}
+          nodeColor={(n) => hexColorForGroup(archGraph.nodes.find((x) => x.id === n.id)?.group || 'other', layout.groupOrder)}
           nodeStrokeWidth={2}
           position="bottom-left"
           style={{ width: 100, height: 75 }}

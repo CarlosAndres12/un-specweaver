@@ -211,6 +211,12 @@ export function readArchGraph(s) {
       id: String(n.id ?? n.name ?? n.path ?? n.file ?? i),
       label: String(n.label ?? n.name ?? n.id ?? n.path ?? n.file ?? `#${i}`),
       kind: String(n.kind ?? n.type ?? n.category ?? ''),
+      // graphify real (a diferencia de los fixtures escritos a mano de este archivo) no trae
+      // kind/type/category en absoluto, pero si trae la ruta real del archivo y el clustering
+      // que ya calculo: son las senales reales para agrupar/clasificar (ver classifyDiagramType).
+      sourceFile: String(n.source_file ?? ''),
+      community: n.community != null ? String(n.community) : '',
+      communityName: String(n.community_name ?? ''),
     }));
     const ids = new Set(nodes.map((n) => n.id));
     // graphify real produce networkx.node_link_data(): las aristas viajan bajo "links", no
@@ -218,12 +224,84 @@ export function readArchGraph(s) {
     // con quien ya genere ese campo (y con los fixtures existentes de este archivo).
     const rawEdges = Array.isArray(raw?.edges) ? raw.edges : Array.isArray(raw?.links) ? raw.links : [];
     const edges = rawEdges
-      .map((e) => ({ from: String(e.source ?? e.from ?? e.src ?? ''), to: String(e.target ?? e.to ?? e.dst ?? ''), kind: String(e.kind ?? e.type ?? '') }))
+      .map((e) => ({
+        from: String(e.source ?? e.from ?? e.src ?? ''),
+        to: String(e.target ?? e.to ?? e.dst ?? ''),
+        kind: String(e.kind ?? e.type ?? ''),
+        // graphify real etiqueta la arista con "relation" (imports/re_exports/contains/...),
+        // no kind/type.
+        relation: String(e.relation ?? ''),
+      }))
       .filter((e) => ids.has(e.from) && ids.has(e.to));
-    return { nodes, edges };
+    const classification = classifyDiagramType({ nodes, edges });
+    for (const n of nodes) {
+      const grouping = classification?.groups.get(n.id) ?? { group: 'other', groupLabel: 'other' };
+      n.group = grouping.group;
+      n.groupLabel = grouping.groupLabel;
+    }
+    return { nodes, edges, diagramType: classification?.diagramType ?? null };
   } catch {
     return null;
   }
+}
+
+// Que tipo de diagrama (de la taxonomia de ingenieria que graphify puede realmente soportar
+// hoy: Component / Package / C4-Container) le corresponde a este grafo, y como agrupar cada
+// nodo para dibujarlo. Funcion pura (sin I/O, sin LLM) sobre el grafo ya normalizado que
+// devuelve readArchGraph() (no el JSON crudo de graphify), para que sea facil de testear con
+// fixtures en memoria.
+//
+// Reglas (deterministas, en orden):
+//  a) si TODOS los nodos ya traen "kind" (fixtures escritos a mano, o una fuente que si lo
+//     provee): 'component', agrupado por kind. Es el comportamiento de siempre, sin cambios.
+//  b) si no, se mira el primer segmento de "sourceFile" (antes de la primera "/"). Si hay
+//     segmentos no vacios, son pocos (<=8) y cada uno cubre en promedio varios nodos
+//     (nodeCount / distinctSegments >= 3): 'c4-container', agrupado por ese segmento de tope
+//     (contenedores/modulos de alto nivel). Nodos sin sourceFile caen a su community.
+//  c) si no, pero hay sourceFile en algun nodo: 'package', agrupado por el directorio completo
+//     (todo antes de la ultima "/"). Nodos sin sourceFile caen a su community.
+//  d) si no hay sourceFile en ningun nodo (caso raro, p.ej. solo nodos "rationale"/"concept" de
+//     graphify): 'component', agrupado por community (la unica senal real que queda).
+export function classifyDiagramType(archGraph) {
+  const nodes = archGraph?.nodes;
+  if (!nodes || !nodes.length) return null;
+
+  const topSegment = (sourceFile) => (sourceFile ? sourceFile.split('/')[0] : '');
+  const dirOf = (sourceFile) => {
+    const idx = sourceFile.lastIndexOf('/');
+    return idx === -1 ? '' : sourceFile.slice(0, idx);
+  };
+  const communityGroup = (n) => ({ group: n.community || 'other', groupLabel: n.communityName || n.community || 'other' });
+
+  if (nodes.every((n) => n.kind)) {
+    const groups = new Map(nodes.map((n) => [n.id, { group: n.kind, groupLabel: n.kind }]));
+    return { diagramType: 'component', groups };
+  }
+
+  const topSegments = nodes.map((n) => topSegment(n.sourceFile)).filter((seg) => seg !== '');
+  const distinctSegments = new Set(topSegments);
+  const nodeCount = nodes.length;
+  const isC4Container = distinctSegments.size > 0 && distinctSegments.size <= 8 && nodeCount / distinctSegments.size >= 3;
+
+  if (isC4Container) {
+    const groups = new Map(nodes.map((n) => {
+      const seg = topSegment(n.sourceFile);
+      return [n.id, seg ? { group: seg, groupLabel: seg } : communityGroup(n)];
+    }));
+    return { diagramType: 'c4-container', groups };
+  }
+
+  if (nodes.some((n) => n.sourceFile)) {
+    const groups = new Map(nodes.map((n) => {
+      if (!n.sourceFile) return [n.id, communityGroup(n)];
+      const dir = dirOf(n.sourceFile);
+      return [n.id, { group: dir, groupLabel: dir || '(root)' }];
+    }));
+    return { diagramType: 'package', groups };
+  }
+
+  const groups = new Map(nodes.map((n) => [n.id, communityGroup(n)]));
+  return { diagramType: 'component', groups };
 }
 
 export function renderHtml(s, lang = 'es') {
