@@ -7,6 +7,15 @@ import crypto from 'node:crypto';
 
 // project-manager under test
 import * as pm from '../src/dashboard/project-manager.mjs';
+import { createServer } from '../src/dashboard/server.mjs';
+
+async function getJson(url, opts = {}) {
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch {}
+  return { res, json, text };
+}
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -387,6 +396,51 @@ test('name explícito respeta override y deriva correctamente', async () => {
       }
     } finally {
       cleanupDirs(repo);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/projects/:id/status — model + archGraph for the live dashboard tabs
+// ---------------------------------------------------------------------------
+
+test('GET /api/projects/:id/status — 200 con { model, archGraph:null } para proyecto sin graphify', async () => {
+  await withIsolatedHome(async () => {
+    const repo = makeTempProject('status-repo-');
+    try {
+      const srv = createServer({ port: 0, host: '127.0.0.1' });
+      const { port } = await srv.start();
+      const base = `http://127.0.0.1:${port}`;
+      try {
+        const r = await getJson(`${base}/api/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: repo }) });
+        assert.equal(r.res.status, 201);
+        const id = r.json.project.id;
+
+        const s = await getJson(`${base}/api/projects/${id}/status`);
+        assert.equal(s.res.status, 200);
+        assert.ok(s.json.model);
+        assert.ok(s.json.model.project);
+        assert.equal(s.json.archGraph, null);
+      } finally {
+        await srv.close();
+      }
+    } finally {
+      cleanupDirs(repo);
+    }
+  });
+});
+
+test('GET /api/projects/:id/status — 404 PROJECT_NOT_FOUND para id desconocido', async () => {
+  await withIsolatedHome(async () => {
+    const srv = createServer({ port: 0, host: '127.0.0.1' });
+    const { port } = await srv.start();
+    const base = `http://127.0.0.1:${port}`;
+    try {
+      const s = await getJson(`${base}/api/projects/${crypto.randomUUID()}/status`);
+      assert.equal(s.res.status, 404);
+      assert.equal(s.json.code, 'PROJECT_NOT_FOUND');
+    } finally {
+      await srv.close();
     }
   });
 });

@@ -200,7 +200,7 @@ const UI = {
 // null y la pestaña muestra el estado vacio en vez de reventar. Los nombres de campo del
 // grafo no estan documentados en este repo (graphify es una herramienta externa), asi que se
 // aceptan variantes razonables (id/name/path, source/from, target/to) en vez de asumir una sola.
-function readArchGraph(s) {
+export function readArchGraph(s) {
   const g = s?.graph;
   if (!g?.path) return null;
   try {

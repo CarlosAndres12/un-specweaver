@@ -19,6 +19,8 @@ import * as runner from './command-runner.mjs';
 import * as stateAdapter from './state-adapter.mjs';
 import * as watcher from './watcher.mjs';
 import { crearProyectoWizard } from './wizard-service.mjs';
+import { collectStatus } from '../status/collect.mjs';
+import { readArchGraph } from '../status/render.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -582,6 +584,25 @@ export function createServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, publicD
           const project = await pm.getProject(id);
           const graphData = await stateAdapter.getGraphData(project.path);
           sendJson(res, 200, graphData);
+        } catch (err) {
+          if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
+            sendProjectNotFound(res, id);
+          } else if (!sendTypedError(res, err)) {
+            sendJson(res, 500, { code: 'INTERNAL', message: String(err.message || err) });
+          }
+        }
+        return;
+      }
+
+      // --- GET /api/projects/:id/status — Progress/Architecture tabs data (live dashboard) ---
+      const statusMatch = pathname.match(/^\/api\/projects\/([^/]+)\/status$/);
+      if (statusMatch && method === 'GET') {
+        const id = decodeURIComponent(statusMatch[1]);
+        try {
+          const project = await pm.getProject(id);
+          const model = collectStatus(project.path);
+          const archGraph = readArchGraph(model);
+          sendJson(res, 200, { model, archGraph });
         } catch (err) {
           if (err instanceof pm.ProjectManagerError && err.code === 'PROJECT_NOT_FOUND') {
             sendProjectNotFound(res, id);
