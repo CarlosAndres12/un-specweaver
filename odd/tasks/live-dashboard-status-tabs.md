@@ -74,19 +74,35 @@ new/updated test file, 3 non-trivial files).
 - [x] Commit (conventional commit, feature branch
       `feat/live-dashboard-status-tabs`).
 
-### T2 — Frontend: tab switcher shell + Progress tab
+### T2 — Frontend: tab switcher shell + Progress tab — DONE
 Route: delegated direct (writer trigger — `App.jsx` + new `ProgressTab.jsx`,
 2+ non-trivial files).
-- [ ] Add a tab switcher in `App.jsx`: "Dependencies" (existing
-      `ArchitectureFlow`), "Progress" (new).
-- [ ] `ProgressTab.jsx`: fetch `/api/projects/:id/status`, render key
-      metrics/phases/requirements/changes/decisions using `index.css`
-      tokens.
-- [ ] `npm run build:ui` succeeds.
-- [ ] Manual check: start dashboard server, `curl` the served page and the
-      new endpoint for a real project, confirm expected content/shape.
-      Disclose explicitly that no interactive browser session was used.
-- [ ] Commit.
+- [x] Added `VIEW_TABS` + `activeTab` state and a `.view-tabs` switcher in
+      `App.jsx`, between the header and the main viewport: "Dependencias"
+      (existing `ArchitectureFlow`, unchanged) and "Progreso" (new). The
+      tabs array is structured so T3 can append an `architecture` entry
+      without restructuring.
+- [x] `ProgressTab.jsx`: fetches `GET /api/projects/:id/status`, renders
+      `model` from `collectStatus()` (field names verified against
+      `src/status/collect.mjs`) — metric tiles (requirements coverage/done
+      %, stories, tasks, active changes), a phases stepper (6 phases),
+      sprint tiles when present, requirements group tiles + orphans, and a
+      key-decisions list. Spanish UI copy, matching this app's existing
+      convention (`App.jsx` header/buttons are already Spanish).
+      Styled with `index.css`'s existing tokens, not `render.mjs`'s inline
+      CSS (deliberately out of scope, per the task file).
+- [x] `npm run build:ui`: succeeded (`index-BapFwsKo.js`, `index-Cl3eaJL-.css`).
+- [x] Manual check: started `node bin/un-specweaver.mjs dashboard --port 0`
+      against this repo itself (already a registered `un-specweaver`
+      project). `curl /` confirmed the served `index.html` references the
+      freshly-built asset filenames. `curl /api/projects/:id/status`
+      returned real `model` data (project name, 6 phases with real
+      done/partial flags, real `metrics.requirements`, `archGraph: null`
+      since no `graphify-out/graph.json` exists here). **No interactive
+      browser click-through was performed** — only HTTP-level verification
+      that the right bytes/data are served; the tab-click UI itself was not
+      visually exercised in a browser.
+- [x] Commit (see hash below).
 
 ### T3 — Frontend: Architecture tab
 Route: delegated direct (writer trigger — new `ArchitectureTab.jsx` +
@@ -113,6 +129,6 @@ Route: delegated direct (writer trigger — new `ArchitectureTab.jsx` +
   pre-existing `terminal-drawer.test.mjs` failures.
 
 ## Checks
-- [ ] T1 done, tested, committed.
-- [ ] T2 done, built, manually checked, committed.
+- [x] T1 done, tested, committed (`5efb800`).
+- [x] T2 done, built, manually checked, committed.
 - [ ] T3 done, built, manually checked, committed.

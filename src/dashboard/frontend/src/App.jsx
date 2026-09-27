@@ -12,9 +12,16 @@ import {
 import ArchitectureFlow from './components/canvas/ArchitectureFlow.jsx';
 import NodeInspector from './components/inspector/NodeInspector.jsx';
 import TerminalDrawer from './components/terminal/TerminalDrawer.jsx';
+import ProgressTab from './ProgressTab.jsx';
+
+const VIEW_TABS = [
+  { id: 'dependencies', label: 'Dependencias' },
+  { id: 'progress', label: 'Progreso' },
+];
 
 export default function App() {
   const [theme, setTheme] = useState('dark');
+  const [activeTab, setActiveTab] = useState('dependencies');
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [activeProject, setActiveProject] = useState(null);
@@ -221,17 +228,34 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Canvas Viewport */}
-      <ArchitectureFlow
-        projectId={activeProjectId}
-        graphData={graphData}
-        onNodeSelect={(node) => setSelectedNode(node)}
-        onRefresh={() => {
-          fetchGraphData(activeProjectId);
-          fetchStateData(activeProjectId);
-        }}
-        theme={theme}
-      />
+      {/* View Switcher */}
+      <div className="view-tabs">
+        {VIEW_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`view-tab ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Main Viewport: Dependencies canvas or Progress view */}
+      {activeTab === 'progress' ? (
+        <ProgressTab projectId={activeProjectId} />
+      ) : (
+        <ArchitectureFlow
+          projectId={activeProjectId}
+          graphData={graphData}
+          onNodeSelect={(node) => setSelectedNode(node)}
+          onRefresh={() => {
+            fetchGraphData(activeProjectId);
+            fetchStateData(activeProjectId);
+          }}
+          theme={theme}
+        />
+      )}
 
       {/* Contextual Node Inspector Drawer */}
       <NodeInspector
