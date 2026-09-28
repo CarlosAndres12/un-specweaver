@@ -5,6 +5,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Re-exportado desde un modulo aparte (sin imports de Node) para que el frontend empaquetado
+// con Vite (ArchitectureTab.jsx) tambien lo pueda importar sin arrastrar fs/path al bundle del
+// navegador. Este archivo (render.mjs) es solo lado-Node, asi que aca se re-exporta para quien
+// ya lo importa (CLI, servidor del dashboard) sin necesitar un import aparte.
+export { DIAGRAM_TYPE_LABELS } from './diagram-labels.mjs';
+
 const L = {
   es: {
     title: 'Estado del proyecto', phases: 'Fases', requirements: 'Requisitos', changes: 'Changes', sprint: 'Sprint',

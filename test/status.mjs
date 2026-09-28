@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { collectStatus, taskProgress, readChanges, sprintStatus } from '../src/status/collect.mjs';
-import { renderTerminal, renderHtml, readArchGraph, classifyDiagramType } from '../src/status/render.mjs';
+import { renderTerminal, renderHtml, readArchGraph, classifyDiagramType, DIAGRAM_TYPE_LABELS } from '../src/status/render.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const CLI = path.join(ROOT, 'bin', 'un-specweaver.mjs');
@@ -442,6 +442,66 @@ test('architecture desde el CLI: sin graphify-out/graph.json, no revienta y avis
   const j = JSON.parse(execFileSync('node', [CLI, 'architecture', '--json'], { cwd: dir, stdio: 'pipe' }).toString());
   assert.equal(j.archGraph, null);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('architecture desde el CLI: --help cae al help global (exit 0), como el resto de subcomandos', () => {
+  const r = spawnSync('node', [CLI, 'architecture', '--help'], { stdio: 'pipe' });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout.toString(), /USO/);
+  assert.match(r.stdout.toString(), /un-specweaver/);
+});
+
+// --- T6: 3 hallazgos no bloqueantes de la revision nativa sobre 415c4d8 -----------------
+
+test('architecture desde el CLI: dir inexistente no revienta, se comporta igual que status/doctor (sin grafo, exit 0)', () => {
+  // Mismo criterio que `status [dir]` y `doctor [dir]`: ninguno de los dos valida que `dir`
+  // exista (confirmado leyendo bin/un-specweaver.mjs y corriendo ambos contra un dir
+  // inexistente) - tratan "no hay nada aca" como estado vacio, no como error. `architecture`
+  // sigue la misma convencion: no es un fallo, es "no hay graphify-out/graph.json aca".
+  const r = spawnSync('node', [CLI, 'architecture', '/nonexistent/un-specweaver-test-path-xyz'], { stdio: 'pipe' });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout.toString(), /Sin grafo de arquitectura disponible/);
+  const rj = spawnSync('node', [CLI, 'architecture', '/nonexistent/un-specweaver-test-path-xyz', '--json'], { stdio: 'pipe' });
+  assert.equal(rj.status, 0);
+  assert.deepEqual(JSON.parse(rj.stdout.toString()), { archGraph: null });
+});
+
+test('architecture desde el CLI: graphify-out/graph.json corrupto (JSON invalido) se reporta como error, no como "sin grafo"', () => {
+  // A diferencia de "no existe el archivo" (estado vacio legitimo, exit 0), un archivo que SI
+  // existe pero no es JSON valido es una senal real de que algo esta roto (graphify se
+  // interrumpio a medio escribir, disco lleno, etc.) - antes de este fix, readArchGraph()
+  // tragaba el error en silencio (mismo catch-all que usa para "no hay archivo", documentado en
+  // su propio comentario) y el CLI standalone mostraba el mismo "Sin grafo..." enganoso, sin
+  // avisar que en realidad SI hay un graph.json, solo que esta corrupto.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'status-arch-corrupt-'));
+  fs.mkdirSync(path.join(dir, 'graphify-out'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'graphify-out', 'graph.json'), '{ esto no es json valido');
+  const r = spawnSync('node', [CLI, 'architecture'], { cwd: dir, stdio: 'pipe' });
+  assert.notEqual(r.status, 0, 'un graph.json corrupto debe salir con codigo de error, no exit 0');
+  assert.doesNotMatch(r.stdout.toString(), /Sin grafo de arquitectura disponible/, 'no debe confundirse con "no hay archivo"');
+  assert.match(r.stderr.toString(), /\[architecture\]/);
+  assert.match(r.stderr.toString(), /graph\.json/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('DIAGRAM_TYPE_LABELS: fuente unica compartida por render.mjs, el CLI y ArchitectureTab.jsx', () => {
+  // render.mjs re-exporta desde src/status/diagram-labels.mjs (modulo sin imports de Node,
+  // importable tanto por el CLI/servidor como por el frontend empaquetado con Vite). Antes de
+  // esto, ArchitectureTab.jsx y bin/un-specweaver.mjs tenian cada uno su propia copia a mano
+  // del mismo objeto (hallazgo de la revision nativa sobre 415c4d8).
+  assert.deepEqual(DIAGRAM_TYPE_LABELS, {
+    component: 'Diagrama de componentes',
+    package: 'Diagrama de paquetes',
+    'c4-container': 'Diagrama de contenedores (C4)',
+  });
+
+  const cliSrc = fs.readFileSync(CLI, 'utf8');
+  assert.doesNotMatch(cliSrc, /const DIAGRAM_TYPE_LABELS = \{/, 'el CLI no debe traer su propia copia a mano');
+  assert.match(cliSrc, /DIAGRAM_TYPE_LABELS/, 'el CLI si debe usar el mapa (importado)');
+
+  const tabSrc = fs.readFileSync(path.join(ROOT, 'src', 'dashboard', 'frontend', 'src', 'ArchitectureTab.jsx'), 'utf8');
+  assert.doesNotMatch(tabSrc, /const DIAGRAM_TYPE_LABELS = \{/, 'ArchitectureTab.jsx no debe traer su propia copia a mano');
+  assert.match(tabSrc, /from ['"].*diagram-labels\.mjs['"]/, 'ArchitectureTab.jsx debe importar el modulo compartido');
 });
 
 // --- cerrar: validar y archivar como comando, no como recordatorio ----------------------

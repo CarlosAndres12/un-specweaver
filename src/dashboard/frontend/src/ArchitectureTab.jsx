@@ -1,19 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, Panel, MarkerType } from '@xyflow/react';
+// Fuente unica compartida con el CLI standalone (bin/un-specweaver.mjs) y con render.mjs
+// (dashboard server) — antes cada uno tenia su propia copia a mano del mismo objeto (hallazgo
+// de la revision nativa sobre 415c4d8). Este modulo no tiene imports de Node (fs/path), a
+// diferencia de render.mjs, para que Vite lo pueda empaquetar sin problema para el navegador.
+import { DIAGRAM_TYPE_LABELS } from '../../../status/diagram-labels.mjs';
 
 const GROUP_COLORS = ['--accent-cyan', '--accent-purple', '--accent-green', '--accent-amber', '--accent-rose'];
 // Canvas (MiniMap) can't resolve CSS custom properties, so it needs literal
 // hex values — same tradeoff ArchitectureFlow's own MiniMap already makes.
 const GROUP_COLORS_HEX = ['#38bdf8', '#818cf8', '#34d399', '#fbbf24', '#f43f5e'];
-
-// Human-readable label for archGraph.diagramType (from classifyDiagramType() in
-// src/status/render.mjs), shown near the toolbar so the view doesn't silently assume
-// "Component" for graphs that were actually classified as Package or C4-Container.
-const DIAGRAM_TYPE_LABELS = {
-  component: 'Diagrama de componentes',
-  package: 'Diagrama de paquetes',
-  'c4-container': 'Diagrama de contenedores (C4)',
-};
 
 function colorForGroup(group, groupOrder) {
   const idx = groupOrder.indexOf(group);

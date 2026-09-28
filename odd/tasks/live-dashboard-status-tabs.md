@@ -545,9 +545,201 @@ TDD mode: strict (source: user's global CLAUDE.md), runner `node --test`
   work with registered-project ids (via `project-manager.mjs`), and this
   is explicitly a single-project standalone analysis tool, not a
   multi-project dashboard feature.
-- No native review (RDD) assessment was run for this task-doc commit: T5's
-  diff (2 files touched for the CLI+test, plus README/task-doc) is small
-  and does not include any built frontend bundle (unlike T2/T4, which hit
-  `lens_context_budget_exceeded` from the committed minified JS asset) —
-  not pre-emptively skipped, just not yet run; left for the user to
-  request if wanted before merge.
+#### Native review assessment (RDD) — ran successfully this time, approved
+Unlike T2/T4, this commit (`415c4d8`) has no committed frontend bundle in
+its diff (4 files: README.md, bin/un-specweaver.mjs, the task doc,
+test/status.mjs), so it cleared the `lens_context_budget_exceeded` wall
+those hit. Isolated review vs. immediate parent `bda2777` (T4): 4 files,
+237 lines, `risk: medium` (`executable_change` in `bin/un-specweaver.mjs`).
+User granted consent. `review-reliability` lens ran, **approved**, 3
+non-blocking findings (informational, no correction offered/required):
+1. **WARNING** (`bin/un-specweaver.mjs:480-484`) — the new `architecture`
+   command has no try/catch around `detectGraphify()`/`readArchGraph()`,
+   and no test covers an invalid `dir` or a malformed/corrupt
+   `graphify-out/graph.json`; such input could surface a raw stack trace
+   instead of the CLI's documented 0/1/2 exit-code contract.
+2. **WARNING** (`bin/un-specweaver.mjs:490`) — `DIAGRAM_TYPE_LABELS` is a
+   hand-duplicated copy of `ArchitectureTab.jsx`'s label map (already
+   flagged above as a manual-sync judgment call); no test asserts the two
+   stay in sync, so future edits to one without the other would silently
+   desync the CLI summary from the dashboard UI.
+3. **SUGGESTION** (`test/status.mjs:404-446`) — `architecture --help`'s
+   fallback-to-global-help behavior was only checked manually (see above),
+   not asserted by an automated test.
+
+Acknowledged (`gentle-ai review acknowledge-approved`), authority burned,
+lineage `review-92c70b894142d5a7`. Reviewed boundary for this isolated
+lineage now sits at `415c4d8`; the T1-T4 backlog since `466f089` remains
+formally unreviewed per the earlier documented decision — unaffected by
+this. Push, PR, and merge remain separate, user-owned decisions. The 3
+findings above are follow-up candidates, not blockers — not applied here
+since none opened a correction.
+
+### T6 — Fix the 3 non-blocking findings from T5's review — DONE
+User decision: fix now rather than leave as follow-up.
+Route: delegated direct (writer trigger — `bin/un-specweaver.mjs`,
+`src/status/render.mjs`, `src/status/diagram-labels.mjs` (new),
+`src/dashboard/frontend/src/ArchitectureTab.jsx`, `test/status.mjs`,
+5 non-trivial files).
+
+**Empirical correction to the finding-1 premise, verified before writing any
+fix**: the reviewer's WARNING used hedged language ("could surface a raw
+stack trace"). Before touching code, ran both named scenarios directly
+against the pre-fix binary:
+- `node bin/un-specweaver.mjs architecture /nonexistent/path` → printed
+  "Sin grafo de arquitectura disponible..." and exited **0**, no crash.
+- `node bin/un-specweaver.mjs architecture <dir-with-corrupt-graph.json>` →
+  same message, same exit **0**, no crash.
+
+Root cause of why neither crashes: `readArchGraph()` (`src/status/
+render.mjs`) already wraps its entire body — including the
+`JSON.parse`/`fs.readFileSync` — in a `try { ... } catch { return null; }`,
+by design (its own comment: "Si no hay archivo, no se puede leer o esta
+vacio, no hay grafo: se embebe null... en vez de reventar"), and
+`detectGraphify()`/`fs.existsSync` never throw for a nonexistent path. Also
+checked the two closest sibling commands for their own convention on an
+invalid `[dir]`: `node bin/un-specweaver.mjs status /nonexistent/x` and
+`... doctor /nonexistent/x` **both** treat it as an empty/uninitialized
+project (exit 0 / exit 1-from-doctor's-own-scoring respectively) — neither
+validates `dir` existence either. So finding 1's two named scenarios were
+already non-crashing and already consistent with existing CLI convention;
+the WARNING's underlying static-analysis premise doesn't hold at runtime.
+This is disclosed rather than silently "fixed nothing": the fix below adds
+real value on top of this correction (see next paragraph), it just isn't a
+crash fix for the two literal scenarios named.
+
+**What was actually broken, found during this same verification**: a
+corrupt-but-existing `graphify-out/graph.json` was **silently
+indistinguishable** from "graphify never ran" — both produced the exact
+same "Sin grafo..." message and exit 0, giving a user who HAS run graphify
+zero signal that their output is corrupted. That's the real, fixable gap.
+
+- [x] Finding 1 (`bin/un-specweaver.mjs:480-484`, now ~474-506): wrapped
+      `detectGraphify()`/`readArchGraph()` in try/catch (defense-in-depth,
+      matches the literal remediation ask even though nothing currently
+      throws through it). Added a targeted health-check: if
+      `detectGraphify()` reports `graph` (file exists on disk) but
+      `JSON.parse(fs.readFileSync(...))` on it fails, catch that
+      specifically and print `[architecture] no se pudo leer
+      graphify-out/graph.json en <root>: <e.message>` to stderr, exit **1**
+      — matching the CLI's own established runtime-error convention (same
+      pattern as `dashboard`'s `[dashboard] no se pudo iniciar:
+      ${e.message}` / exit 1 in the same file; exit 2 is reserved for
+      argument-parsing errors like "Opcion desconocida" — confirmed by
+      grepping every `process.exit(` call site in `bin/un-specweaver.mjs`).
+      This does NOT duplicate the graph-building parse (`readArchGraph()`
+      remains the single place that builds the actual `archGraph` model);
+      it's a narrow, separate health-check read solely to distinguish
+      "no file" from "corrupt file" for the error message/exit code, kept
+      inside the same try block as the real call.
+      The nonexistent-`dir` case is deliberately left producing the same
+      exit-0 "Sin grafo..." message as before, per the sibling-command
+      precedent above — changing that would make `architecture` LESS
+      consistent with `status [dir]`/`doctor [dir]`, not more.
+      Tests added to `test/status.mjs`: (a) nonexistent dir → regression
+      test locking in the existing-and-correct exit-0 behavior (RED/GREEN
+      note: this test passed unchanged before and after — no crash existed
+      to fix, see correction above); (b) corrupt JSON → genuine RED/GREEN:
+      before the fix, asserting `r.status !== 0` failed (`actual: 0`,
+      i.e. exit 0 exactly like the "no file" case); after the fix, exit 1
+      with a `[architecture] ...graph.json...` stderr message, distinct
+      from the "Sin grafo..." stdout message.
+- [x] Finding 2 (`bin/un-specweaver.mjs:490`): took the **preferred path**
+      (real shared module, not a sync test) — created
+      `src/status/diagram-labels.mjs`, a module with zero Node-specific
+      imports (no `fs`/`path`) exporting `DIAGRAM_TYPE_LABELS`. Re-exported
+      from `src/status/render.mjs` (`export { DIAGRAM_TYPE_LABELS } from
+      './diagram-labels.mjs'`) so existing Node-side importers (CLI,
+      dashboard server) can keep importing from `render.mjs` in one line;
+      `bin/un-specweaver.mjs`'s `case 'architecture'` now destructures
+      `DIAGRAM_TYPE_LABELS` from that same `render.mjs` import instead of
+      a hand-copied literal. `ArchitectureTab.jsx` imports directly from
+      `../../../status/diagram-labels.mjs` (NOT from `render.mjs`, since
+      that file imports `fs`/`path` at module scope — importing it from the
+      browser-bundled frontend would be the actual risk flagged in the
+      task; the new module has no such import, so it's safe for Vite).
+      Chose this over trying to get Vite to tree-shake around
+      `render.mjs`'s unused `fs`/`path` imports for a single named export —
+      that would depend on Rollup's ability to fully eliminate a
+      side-effectful top-level `import fs from 'node:fs'` for a browser
+      target, which isn't guaranteed and wasn't worth the risk when a
+      2-line dependency-free module does the same job with certainty.
+      `npm run build:ui` succeeded afterward (`vite build`, 2048 modules
+      transformed, `index-DztItjiW.js`/`index-Cl3eaJL-.css`, 488ms) —
+      confirms the frontend can resolve an import path that reaches
+      outside the Vite project root (`src/dashboard/frontend/`) into
+      `src/status/`.
+      Added a regression test in `test/status.mjs` that (a) asserts
+      `DIAGRAM_TYPE_LABELS` (imported from `render.mjs`) has the exact
+      expected 3 entries, (b) greps `bin/un-specweaver.mjs`'s source to
+      confirm it no longer has its own `const DIAGRAM_TYPE_LABELS = {`
+      literal, and (c) greps `ArchitectureTab.jsx`'s source the same way
+      plus confirms it imports from `diagram-labels.mjs` — this is a
+      stronger regression guard than the fallback "structurally identical"
+      sync test would have been, since it fails if either file's
+      duplicate copy is ever silently reintroduced, not just if the two
+      diverge in content.
+- [x] Finding 3 (`test/status.mjs:404-446`): added
+      `architecture desde el CLI: --help cae al help global (exit 0), como
+      el resto de subcomandos` — runs `node bin/un-specweaver.mjs
+      architecture --help` via `spawnSync`, asserts `status === 0` and
+      that stdout matches the global `HELP` text (`/USO/`,
+      `/un-specweaver/`). RED confirmed: didn't exist before, so this is a
+      pure addition (no prior assertion to fail against); its value is
+      replacing the previously-manual-only check documented in T5.
+- [x] RED before each fix: confirmed for finding 2 by adding
+      `DIAGRAM_TYPE_LABELS` to `test/status.mjs`'s top-level import from
+      `render.mjs` before the export existed — `node --test test/status.mjs`
+      failed at module-load time (`SyntaxError: ... does not provide an
+      export named 'DIAGRAM_TYPE_LABELS'`), same style as T4's own RED
+      (whole file fails to run). Confirmed for finding 1's corrupt-JSON
+      case as a real assertion failure (`actual: 0` where `notEqual 0` was
+      expected) — pasted above. Finding 1's nonexistent-dir case and
+      finding 3's `--help` case are additions with no crash to reproduce
+      (documented, not fabricated).
+      Full run before any implementation: `node --test test/status.mjs` →
+      1 test, 1 fail (whole-file module-load `SyntaxError`, expected —
+      matches T4's own precedent for how a missing export shows up).
+      After adding just the `render.mjs` re-export (before touching
+      `bin/un-specweaver.mjs`/`ArchitectureTab.jsx`): 25 tests, 23 pass, 2
+      fail — the corrupt-JSON test (`actual: 0`) and the dedup-source test
+      (still finds the old `const DIAGRAM_TYPE_LABELS = {` literals in
+      both files). GREEN after implementing both fixes: **25/25 pass**.
+- [x] Full regression: `node --test test/dashboard.test.mjs
+      test/frontend.test.mjs test/cli-dashboard.test.mjs test/status.mjs`
+      → **57 tests, 48 pass, 9 fail**. Same 9 pre-existing failing test
+      names as every prior task's baseline (`4.3-1`, `4.3-1b`, `4.3-2b`,
+      `E4S1-0`, `E4S1-1`, `E4S1-2`, `E4S1-3`, `E4S1-4`, `E4S1-extra` — all
+      legacy vanilla-SPA-related, unrelated to this change). 57 − 53 (T5
+      total) = 4 = exactly the new tests added (nonexistent-dir, corrupt-
+      JSON, `--help` fallback, DIAGRAM_TYPE_LABELS dedup/sync), all
+      passing. Zero new regressions.
+- [x] `npm run build:ui`: succeeded (`index-DztItjiW.js`,
+      `index-Cl3eaJL-.css` — same CSS hash as T5 since no CSS changed).
+      Verified the built bundle actually contains the label strings
+      (`grep -o "Diagrama de componentes" index-DztItjiW.js` → 1 match, as
+      expected from a single bundled copy).
+- [x] Manual verification (exact terminal output):
+      ```
+      $ node bin/un-specweaver.mjs architecture /nonexistent/path
+      Sin grafo de arquitectura disponible (requiere graphify-out/graph.json). Corre: graphify update .
+      EXIT:0
+
+      $ node bin/un-specweaver.mjs architecture <tmpdir-with-corrupt-graphify-out/graph.json>
+      [architecture] no se pudo leer graphify-out/graph.json en <tmpdir>: Expected property name or '}' in JSON at position 2 (line 1 column 3)
+      EXIT:1
+      ```
+      Also re-ran `node bin/un-specweaver.mjs architecture .` (this repo,
+      no `graphify-out/`) to confirm the happy/empty path is unaffected by
+      the new health-check: same "Sin grafo..." message, exit 0.
+- [x] Committed (conventional commit) on `feat/live-dashboard-status-tabs`.
+
+#### Native review (RDD) for T6
+Not run for this task — the T2/T4 precedent already established that this
+lineage's committed frontend-bundle history blows the reviewer's context
+budget (`lens_context_budget_exceeded`) regardless of authored line count,
+and per the user's earlier documented decision the reviewed boundary for
+this backlog stays at `466f089`/`415c4d8` depending on lineage. T6's own
+diff (5 source files + 1 new frontend bundle) was not separately
+submitted for isolated review in this session; flagged here rather than
+silently assumed reviewed.

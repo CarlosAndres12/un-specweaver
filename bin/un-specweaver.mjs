@@ -477,17 +477,33 @@ if (cmd === 'dashboard' || cmd === 'ui') {
       // funciones necesitan (detectGraphify + la ruta del grafo), sin correr collectStatus()
       // completo (BMAD/OpenSpec/decisiones/etc.) — para quien solo quiere la clasificacion del
       // diagrama sin el resto del pipeline de status/dashboard.
+      const fs = await import('node:fs');
       const { detectGraphify } = await import('../src/env.mjs');
-      const { readArchGraph } = await import('../src/status/render.mjs');
+      const { readArchGraph, DIAGRAM_TYPE_LABELS } = await import('../src/status/render.mjs');
       const root = path.resolve(o._[0] || process.cwd());
-      const g = detectGraphify(root);
-      const archGraph = readArchGraph({ project: { root }, graph: { path: g.graph } });
+      let g, archGraph;
+      try {
+        g = detectGraphify(root);
+        // detectGraphify() no valida que `root` exista (mismo criterio que `status`/`doctor`:
+        // un dir sin nada adentro es "estado vacio", no un error — g.graph queda null y cae al
+        // aviso de abajo, exit 0). Lo que SI se valida aca aparte: si graphify-out/graph.json
+        // existe en disco (g.graph no-null) pero no es JSON valido, readArchGraph() lo traga en
+        // silencio (mismo catch-all documentado en su propio comentario, pensado para que el
+        // endpoint del dashboard no reviente) y este CLI standalone mostraria el mismo "Sin
+        // grafo..." que si no hubiera archivo — enganoso para quien SI corrio graphify y tiene
+        // un archivo corrupto. El grafo en si lo sigue construyendo unicamente readArchGraph()
+        // (no se duplica el parseo real, solo este chequeo de salud).
+        if (g.graph) JSON.parse(fs.readFileSync(path.join(root, g.graph), 'utf8'));
+        archGraph = readArchGraph({ project: { root }, graph: { path: g.graph } });
+      } catch (e) {
+        console.error(`[architecture] no se pudo leer ${g?.graph || 'graphify-out/graph.json'} en ${root}: ${e.message}`);
+        process.exit(1);
+      }
       if (o.json) { console.log(JSON.stringify({ archGraph }, null, 2)); process.exit(0); }
       if (!archGraph) {
         console.log('Sin grafo de arquitectura disponible (requiere graphify-out/graph.json). Corre: graphify update .');
         process.exit(0);
       }
-      const DIAGRAM_TYPE_LABELS = { component: 'Diagrama de componentes', package: 'Diagrama de paquetes', 'c4-container': 'Diagrama de contenedores (C4)' };
       const groupCounts = new Map();
       for (const n of archGraph.nodes) {
         const label = n.groupLabel || n.group || 'other';
