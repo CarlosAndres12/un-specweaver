@@ -734,12 +734,16 @@ zero signal that their output is corrupted. That's the real, fixable gap.
       the new health-check: same "Sin grafo..." message, exit 0.
 - [x] Committed (conventional commit) on `feat/live-dashboard-status-tabs`.
 
-#### Native review (RDD) for T6
-Not run for this task — the T2/T4 precedent already established that this
-lineage's committed frontend-bundle history blows the reviewer's context
-budget (`lens_context_budget_exceeded`) regardless of authored line count,
-and per the user's earlier documented decision the reviewed boundary for
-this backlog stays at `466f089`/`415c4d8` depending on lineage. T6's own
-diff (5 source files + 1 new frontend bundle) was not separately
-submitted for isolated review in this session; flagged here rather than
-silently assumed reviewed.
+#### Native review (RDD) for T6 — declined, not attempted-and-failed
+Isolated review vs. immediate parent `415c4d8` was preflighted
+successfully this time (unlike the T2/T4 precedent, preflight did NOT fail
+with `lens_context_budget_exceeded` before consent was even asked — 8
+files, 355 lines, medium risk, `executable_change` in
+`bin/un-specweaver.mjs`, lineage `review-a8cf6de114fd7218`). Asked the
+user directly whether to review given this commit again includes a
+rebuilt frontend bundle (`index-DztItjiW.js`) that might still hit the
+same wall once the reviewer lens actually ran; user chose **skip this
+time** before the actual reviewer lens was invoked. Declined cleanly
+(`consent: declined_this_candidate`), no review record created, RDD stays
+enabled. Reviewed boundary stays at `415c4d8` for the isolated-lineage
+approach (T5's own boundary); this commit itself is not reviewed.
